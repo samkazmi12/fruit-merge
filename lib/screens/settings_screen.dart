@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/audio_manager.dart';
 import '../services/storage_service.dart';
 import '../utils/constants.dart';
+import '../utils/responsive.dart';
 
 class SettingsScreen extends StatefulWidget {
   final StorageService storage;
@@ -40,17 +41,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               // App bar
               Padding(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(context.s(16)),
                 child: Row(
                   children: [
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
                       child: Container(
-                        width: 44,
-                        height: 44,
+                        width: context.s(44),
+                        height: context.s(44),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(context.s(14)),
                         ),
                         child: const Icon(
                           Icons.arrow_back_rounded,
@@ -58,11 +59,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    SizedBox(width: context.s(16)),
                     Text(
                       '⚙️ Settings',
                       style: GoogleFonts.fredoka(
-                        fontSize: 28,
+                        fontSize: context.sp(28),
                         fontWeight: FontWeight.bold,
                         color: AppColors.textDark,
                       ),
@@ -71,15 +72,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              SizedBox(height: context.s(16)),
 
               // Settings Items
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: EdgeInsets.symmetric(horizontal: context.s(20)),
                   child: Column(
                     children: [
                       _buildSettingTile(
+                        context,
                         icon: Icons.volume_up_rounded,
                         label: 'Sound Effects',
                         value: widget.audio.soundEnabled,
@@ -89,9 +91,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
 
-                      const SizedBox(height: 12),
+                      SizedBox(height: context.s(12)),
 
                       _buildSettingTile(
+                        context,
                         icon: Icons.music_note_rounded,
                         label: 'Music',
                         value: widget.audio.musicEnabled,
@@ -101,9 +104,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
 
-                      const SizedBox(height: 12),
+                      SizedBox(height: context.s(12)),
 
                       _buildSettingTile(
+                        context,
                         icon: Icons.vibration_rounded,
                         label: 'Vibration',
                         value: widget.storage.vibrationEnabled,
@@ -113,7 +117,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
 
-                      const SizedBox(height: 32),
+                      SizedBox(height: context.s(32)),
 
                       // Reset high score
                       GestureDetector(
@@ -135,8 +139,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   child: Text('Cancel', style: GoogleFonts.fredoka()),
                                 ),
                                 TextButton(
-                                  onPressed: () {
-                                    Navigator.pop(ctx);
+                                  onPressed: () async {
+                                    await widget.storage.resetHighScore();
+                                    if (ctx.mounted) Navigator.pop(ctx);
                                   },
                                   child: Text(
                                     'Reset',
@@ -149,21 +154,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                         child: Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          padding: EdgeInsets.symmetric(vertical: context.s(14)),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(context.s(16)),
                             border: Border.all(color: Colors.red.shade200),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(Icons.delete_outline, color: Colors.red.shade400),
-                              const SizedBox(width: 8),
+                              SizedBox(width: context.s(8)),
                               Text(
                                 'Reset High Score',
                                 style: GoogleFonts.fredoka(
-                                  fontSize: 16,
+                                  fontSize: context.sp(16),
                                   color: Colors.red.shade400,
                                 ),
                               ),
@@ -177,26 +182,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       // Credits
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(16),
+                        padding: EdgeInsets.all(context.s(16)),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(context.s(16)),
                         ),
                         child: Column(
                           children: [
                             Text(
                               '🍉 Fruit Merge Puzzle',
                               style: GoogleFonts.fredoka(
-                                fontSize: 16,
+                                fontSize: context.sp(16),
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.textDark,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            SizedBox(height: context.s(4)),
                             Text(
                               'Version 1.0.0',
                               style: GoogleFonts.fredoka(
-                                fontSize: 12,
+                                fontSize: context.sp(12),
                                 color: AppColors.textLight,
                               ),
                             ),
@@ -204,7 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
 
-                      const SizedBox(height: 20),
+                      SizedBox(height: context.s(20)),
                     ],
                   ),
                 ),
@@ -216,17 +221,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSettingTile({
+  Widget _buildSettingTile(
+    BuildContext context, {
     required IconData icon,
     required String label,
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: EdgeInsets.symmetric(horizontal: context.s(16), vertical: context.s(14)),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(context.s(16)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -238,20 +244,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: context.s(40),
+            height: context.s(40),
             decoration: BoxDecoration(
               color: const Color(0xFFFFE0B2),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(context.s(12)),
             ),
-            child: Icon(icon, color: const Color(0xFFFF8A65), size: 22),
+            child: Icon(icon, color: const Color(0xFFFF8A65), size: context.s(22)),
           ),
-          const SizedBox(width: 14),
+          SizedBox(width: context.s(14)),
           Expanded(
             child: Text(
               label,
               style: GoogleFonts.fredoka(
-                fontSize: 16,
+                fontSize: context.sp(16),
                 fontWeight: FontWeight.w500,
                 color: AppColors.textDark,
               ),

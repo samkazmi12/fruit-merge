@@ -9,7 +9,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  provider: ^6.1.2
   shared_preferences: ^2.3.4
   google_fonts: ^6.2.1
   cupertino_icons: ^1.0.8
@@ -22,3 +21,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/audio/
+    - assets/images/

@@ -1,4 +1,5 @@
-import 'dart:math';
+import 'dart:math' show pi;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../models/fruit_data.dart';
 import 'fruit_physics.dart';
@@ -11,7 +12,8 @@ class GamePainter extends CustomPainter {
   final double boxTop;
   final double boxBottom;
   final double gameOverLineY;
-  final double dangerLevel; // 0..1  — how full the box is
+  final double dangerLevel;
+  final Map<FruitType, ui.Image> fruitImages;
 
   GamePainter({
     required this.fruits,
@@ -22,6 +24,7 @@ class GamePainter extends CustomPainter {
     required this.boxBottom,
     required this.gameOverLineY,
     this.dangerLevel = 0,
+    this.fruitImages = const {},
   });
 
   @override
@@ -144,220 +147,125 @@ class GamePainter extends CustomPainter {
   }
 
   void _drawFruit(Canvas canvas, FruitParticle f) {
-    final data = f.data;
     final r = f.radius * f.spawnScale;
     if (r < 1.0) return;
 
-    final cx = f.x;
-    final cy = f.y;
+    final center = Offset(f.x, f.y);
 
-    canvas.save();
-    canvas.translate(cx, cy);
-    canvas.rotate(f.angle); // ← SPIN ROTATION
-
-    final center = Offset.zero;
-
-    // Drop shadow
-    canvas.drawCircle(
-      Offset(r * 0.06, r * 0.1),
-      r,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.20)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.28),
-    );
-
-    // Main gradient
-    final gradient = RadialGradient(
-      center: const Alignment(-0.35, -0.38),
-      radius: 1.0,
-      colors: [
-        Color.lerp(data.color, Colors.white, 0.48)!,
-        data.color,
-        Color.lerp(data.color, Colors.black, 0.20)!,
-      ],
-      stops: const [0.0, 0.62, 1.0],
-    );
-    canvas.drawCircle(
-      center,
-      r,
-      Paint()
-        ..shader = gradient.createShader(
-          Rect.fromCircle(center: center, radius: r),
-        ),
-    );
-
-    // Preview dashed outline
-    if (f.isPreview) {
-      canvas.drawCircle(
-        center,
-        r,
-        Paint()
-          ..color = data.color.withValues(alpha: 0.45)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.2,
-      );
-    }
-
-    // Merge glow ring
+    // Merge glow
     if (f.mergeGlow > 0) {
       canvas.drawCircle(
         center,
-        r * 1.28,
+        r * 1.25,
         Paint()
           ..color = Colors.white.withValues(alpha: f.mergeGlow * 0.5)
           ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.4),
       );
     }
 
-    // Specular highlight (top left)
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(-r * 0.35, -r * 0.4),
-        width: r * 0.5,
-        height: r * 0.25,
-      ),
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.35)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.15),
-    );
+    // Preview drop indicator — subtle dashed ring only
+    if (f.isPreview) {
+      canvas.drawCircle(
+        center, r,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.25)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
 
-    // Organic details (stem, leaf, seeds, patterns)
-    // Rotate back slightly so stems aren't perfectly aligned with physics rotation
-    // making them feel more natural.
-    _drawOrganicDetails(canvas, center, r, data);
+    if (f.spawnScale > 0.3) {
+      final img = fruitImages[f.type];
+      if (img != null) {
+        _drawSprite(canvas, center, r, img, f.angle);
+      } else {
+        _drawEmoji(canvas, center, r, f.data.emoji);
+      }
+      if (f.isBlinking) _drawBlink(canvas, f);
+    }
+  }
+
+  // Normalized eye positions per fruit type: (xSpacing, yOffset, arcWidth) as fraction of radius.
+  // xSpacing: horizontal distance from center to each eye
+  // yOffset: vertical offset from center (positive = lower)
+  // arcWidth: width of each closed-eye arc
+  static const Map<FruitType, (double, double, double)> _eyeData = {
+    FruitType.cherry:     (0.20, 0.08, 0.30),
+    FruitType.strawberry: (0.18, 0.08, 0.28),
+    FruitType.grape:      (0.20, 0.06, 0.28),
+    FruitType.orange:     (0.22, 0.06, 0.32),
+    FruitType.apple:      (0.22, 0.10, 0.32),
+    FruitType.pear:       (0.20, 0.14, 0.30),
+    FruitType.peach:      (0.20, 0.08, 0.30),
+    FruitType.pineapple:  (0.22, 0.06, 0.32),
+    FruitType.melon:      (0.22, 0.06, 0.32),
+    FruitType.watermelon: (0.24, 0.06, 0.34),
+  };
+
+  void _drawBlink(Canvas canvas, FruitParticle f) {
+    final r = f.radius * f.spawnScale;
+    final t = f.blinkTimer;
+    // Triangle-wave alpha: rises 0→1 in first half, falls 1→0 in second half
+    final half = 0.09;
+    final alpha = ((t > half ? (0.18 - t) : t) / half).clamp(0.0, 1.0);
+    if (alpha <= 0) return;
+
+    final ed = _eyeData[f.type] ?? (0.20, 0.08, 0.30);
+    final xSpacing = ed.$1 * r;
+    final yOffset = ed.$2 * r;
+    final arcW = ed.$3 * r;
+    final arcH = arcW * 0.48;
+
+    final paint = Paint()
+      ..color = const Color(0xFF2D1A00).withValues(alpha: alpha * 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (r * 0.075).clamp(1.5, 5.0)
+      ..strokeCap = StrokeCap.round;
+
+    canvas.save();
+    canvas.translate(f.x, f.y);
+    canvas.rotate(f.angle);
+
+    for (final sign in [-1.0, 1.0]) {
+      // Arc from right (0) sweeping counterclockwise 180° → traces top = ∩ = closed eye
+      canvas.drawArc(
+        Rect.fromCenter(
+          center: Offset(sign * xSpacing, yOffset),
+          width: arcW,
+          height: arcH,
+        ),
+        0,
+        -pi,
+        false,
+        paint,
+      );
+    }
 
     canvas.restore();
   }
 
-  void _drawOrganicDetails(Canvas canvas, Offset c, double r, FruitData data) {
-    final t = data.type;
-    
-    // ── Skin patterns ────────────────────────────────────────────────────────
-    if (t == FruitType.watermelon) {
-      // Dark green stripes
-      final stripePaint = Paint()
-        ..color = const Color(0xFF1B5E20).withValues(alpha: 0.6)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = r * 0.15
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.05);
-      
-      canvas.save();
-      canvas.clipPath(Path()..addOval(Rect.fromCircle(center: c, radius: r)));
-      for (int i = -2; i <= 2; i++) {
-        final path = Path();
-        path.moveTo(c.dx + i * r * 0.45, c.dy - r);
-        path.quadraticBezierTo(
-          c.dx + i * r * 0.6, c.dy,
-          c.dx + i * r * 0.45, c.dy + r,
-        );
-        canvas.drawPath(path, stripePaint);
-      }
-      canvas.restore();
-      return; // no stem/leaf for watermelon
-    }
+  void _drawSprite(Canvas canvas, Offset center, double r, ui.Image img, double angle) {
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle);
+    canvas.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 2),
+      Paint()..filterQuality = FilterQuality.medium,
+    );
+    canvas.restore();
+  }
 
-    if (t == FruitType.pineapple) {
-      // Crosshatch pattern
-      final hatchPaint = Paint()
-        ..color = const Color(0xFFF57F17).withValues(alpha: 0.4)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = r * 0.04;
-      canvas.save();
-      canvas.clipPath(Path()..addOval(Rect.fromCircle(center: c, radius: r)));
-      for (double i = -r; i < r; i += r * 0.3) {
-        canvas.drawLine(Offset(c.dx - r, c.dy + i), Offset(c.dx + r, c.dy + i + r), hatchPaint);
-        canvas.drawLine(Offset(c.dx + r, c.dy + i), Offset(c.dx - r, c.dy + i + r), hatchPaint);
-      }
-      canvas.restore();
-    }
-
-    if (t == FruitType.strawberry) {
-      // Seeds
-      final seedPaint = Paint()..color = const Color(0xFFFFD54F);
-      for (int i = 0; i < 15; i++) {
-        final sx = c.dx + (cos(i * 1.5) * r * 0.6);
-        final sy = c.dy + (sin(i * 2.3) * r * 0.6);
-        canvas.drawOval(
-          Rect.fromCenter(center: Offset(sx, sy), width: r * 0.06, height: r * 0.1),
-          seedPaint,
-        );
-      }
-    }
-
-    // ── Stem ────────────────────────────────────────────────────────────────
-    final hasStem = t != FruitType.melon && t != FruitType.pineapple;
-    if (hasStem) {
-      final stemPaint = Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = r * 0.08
-        ..strokeCap = StrokeCap.round;
-      
-      final stemPath = Path();
-      stemPath.moveTo(c.dx, c.dy - r * 0.95);
-      stemPath.quadraticBezierTo(
-        c.dx + r * 0.1, c.dy - r * 1.2,
-        c.dx + r * 0.2, c.dy - r * 1.3,
-      );
-      canvas.drawPath(stemPath, stemPaint);
-      
-      // Stem base dimple
-      canvas.drawOval(
-        Rect.fromCenter(center: Offset(c.dx, c.dy - r * 0.95), width: r * 0.3, height: r * 0.1),
-        Paint()..color = Colors.black.withValues(alpha: 0.3)..maskFilter = MaskFilter.blur(BlurStyle.normal, r*0.05),
-      );
-    }
-
-    // ── Leaves ──────────────────────────────────────────────────────────────
-    final hasLeaf = t == FruitType.cherry || t == FruitType.strawberry || 
-                    t == FruitType.apple || t == FruitType.peach || 
-                    t == FruitType.orange || t == FruitType.pineapple;
-    if (hasLeaf) {
-      final leafPaint = Paint()..color = const Color(0xFF43A047);
-      final leafBorder = Paint()
-        ..color = const Color(0xFF1B5E20)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = r * 0.02;
-
-      if (t == FruitType.pineapple) {
-        // Crown of leaves
-        for (int i = -1; i <= 1; i++) {
-          final lp = Path();
-          lp.moveTo(c.dx, c.dy - r * 0.9);
-          lp.quadraticBezierTo(c.dx + i * r * 0.5, c.dy - r * 1.6, c.dx + i * r * 0.8, c.dy - r * 1.8);
-          lp.quadraticBezierTo(c.dx + i * r * 0.2, c.dy - r * 1.3, c.dx, c.dy - r * 0.9);
-          canvas.drawPath(lp, leafPaint);
-          canvas.drawPath(lp, leafBorder);
-        }
-      } else if (t == FruitType.strawberry) {
-        // Strawberry calyx (green cap)
-        for (double i = -0.5; i <= 0.5; i += 0.5) {
-          final lp = Path();
-          lp.moveTo(c.dx, c.dy - r * 0.9);
-          lp.lineTo(c.dx + i * r, c.dy - r * 1.1);
-          lp.lineTo(c.dx + i * r * 0.5, c.dy - r * 0.85);
-          canvas.drawPath(lp, leafPaint);
-        }
-      } else {
-        // Standard single leaf
-        final leafPath = Path();
-        leafPath.moveTo(c.dx + r * 0.05, c.dy - r * 1.05); // attach to stem
-        leafPath.quadraticBezierTo(c.dx - r * 0.5, c.dy - r * 1.4, c.dx - r * 0.6, c.dy - r * 0.9);
-        leafPath.quadraticBezierTo(c.dx - r * 0.2, c.dy - r * 0.8, c.dx + r * 0.05, c.dy - r * 1.05);
-        canvas.drawPath(leafPath, leafPaint);
-        canvas.drawPath(leafPath, leafBorder);
-        
-        // Leaf vein
-        final veinPaint = Paint()
-          ..color = const Color(0xFF1B5E20).withValues(alpha: 0.5)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = r * 0.02;
-        final veinPath = Path();
-        veinPath.moveTo(c.dx + r * 0.05, c.dy - r * 1.05);
-        veinPath.quadraticBezierTo(c.dx - r * 0.3, c.dy - r * 1.1, c.dx - r * 0.55, c.dy - r * 0.95);
-        canvas.drawPath(veinPath, veinPaint);
-      }
-    }
+  void _drawEmoji(Canvas canvas, Offset center, double r, String emoji) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: emoji,
+        style: TextStyle(fontSize: r * 1.25, height: 1.0),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
   }
 
   void _drawDropGuide(Canvas canvas, FruitParticle f) {
