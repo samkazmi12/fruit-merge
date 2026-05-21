@@ -233,13 +233,13 @@ class FruitPhysics {
     for (int i = 0; i < fruits.length; i++) {
       final a = fruits[i];
       if (!a.alive || a.isPreview) continue;
-      // Sleeping fruits skip being the "pusher" — they're still resolved as
-      // obstacles when active fruits (outer) check against them (inner j).
-      if (a.sleepCounter > 20) continue;
 
       for (int j = i + 1; j < fruits.length; j++) {
         final b = fruits[j];
         if (!b.alive || b.isPreview) continue;
+        // Skip only when BOTH are settled — an active fruit must always resolve
+        // against sleeping obstacles regardless of list order.
+        if (a.sleepCounter > 20 && b.sleepCounter > 20) continue;
 
         final ra = a.radius * a.spawnScale;
         final rb = b.radius * b.spawnScale;

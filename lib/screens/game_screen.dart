@@ -53,7 +53,13 @@ class _GameScreenState extends State<GameScreen>
   double _dropY = 0, _gameOverLineY = 0;
   double _cardsH = 0;
   double _adH = 0;
+  double _hudH = 0;
   bool _boxReady = false;
+
+  // ── Drop zone visuals ───────────────────────────────────────────
+  ui.Image? _cloudImage;
+  ui.Image? _branchImage;
+  final List<CloudState> _clouds = [];
 
   // ── Game state ─────────────────────────────────────────────────
   FruitType _currentType = FruitType.cherry;
@@ -164,6 +170,20 @@ class _GameScreenState extends State<GameScreen>
         if (mounted) _fruitImages[entry.key] = frame.image;
       } catch (_) {}
     }
+    for (final path in const [
+      'assets/images/asset_cloud.png',
+      'assets/images/asset_branch.png',
+    ]) {
+      try {
+        final data = await rootBundle.load(path);
+        final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+        final frame = await codec.getNextFrame();
+        if (mounted) {
+          if (path.contains('cloud')) _cloudImage = frame.image;
+          if (path.contains('branch')) _branchImage = frame.image;
+        }
+      } catch (_) {}
+    }
     if (mounted) setState(() {});
   }
 
@@ -196,14 +216,13 @@ class _GameScreenState extends State<GameScreen>
     // Cap jar height so it doesn't dominate the screen on tall/large devices
     final sf = (size.width / 390).clamp(0.75, 1.35);
     final hudH = 130.0 * sf;
-    _cardsH = 64.0 * sf; // power-up cards + evolution bar height
-    _adH = 60.0; // reserved ad banner (standard 320×50 dp)
+    _hudH = hudH;
+    _cardsH = 64.0 * sf;
+    _adH = 60.0;
     const sidePad = 8.0;
     _boxLeft = offsetLeft + sidePad;
     _boxRight = offsetLeft + effectiveWidth - sidePad;
-    // Jar bottom sits just above: power cards + evolution strip + ad space
     _boxBottom = size.height - _cardsH * 2 - _adH;
-    // Square jar: height = width
     final jarWidth = _boxRight - _boxLeft;
     _boxTop = (_boxBottom - jarWidth).clamp(hudH + 16, _boxBottom - 80);
 
@@ -216,6 +235,34 @@ class _GameScreenState extends State<GameScreen>
     );
     _boxReady = true;
     _dropX = (_boxLeft + _boxRight) / 2;
+
+    // ── Init clouds in drop zone ──────────────────────────────────
+    if (_clouds.isEmpty) {
+      final dzTop = hudH + 10;
+      final dzH = _boxTop - hudH;
+      // fruit diameter range: orange (42px) → watermelon (106px)
+      _clouds.addAll([
+        CloudState(
+          x: _boxLeft + jarWidth * 0.18,
+          y: dzTop + dzH * 0.25,
+          width: 68,
+          speed: 18,
+        ),
+        CloudState(
+          x: _boxLeft + jarWidth * 0.72,
+          y: dzTop + dzH * 0.55,
+          width: 46,
+          speed: -22,
+        ),
+        CloudState(
+          x: _boxLeft + jarWidth * 0.45,
+          y: dzTop + dzH * 0.78,
+          width: 88,
+          speed: 14,
+        ),
+      ]);
+    }
+
     _nextType = _randomType();
     if (!_tryRestoreGame()) _spawnNext();
   }
@@ -411,6 +458,15 @@ class _GameScreenState extends State<GameScreen>
 
     _updateDangerLevel();
     _checkGameOver();
+
+    // ── Drift clouds left/right, wrap at box edges ────────────────
+    for (final c in _clouds) {
+      c.x += c.speed * dt;
+      final hw = c.width / 2;
+      if (c.speed > 0 && c.x - hw > _boxRight) c.x = _boxLeft - hw;
+      if (c.speed < 0 && c.x + hw < _boxLeft) c.x = _boxRight + hw;
+    }
+
     _tickNotifier.value++;
   }
 
@@ -758,7 +814,7 @@ class _GameScreenState extends State<GameScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        color: const Color(0xFF42a5f5),
+        color: const Color(0xFFDDE5B6),
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -791,6 +847,16 @@ class _GameScreenState extends State<GameScreen>
                                       gameOverLineY: _gameOverLineY,
                                       dangerLevel: _dangerLevel,
                                       fruitImages: _fruitImages,
+                                      clouds: _clouds,
+                                      cloudImage: _cloudImage,
+                                      branchImage: _branchImage,
+                                      dropX: _dropX,
+                                      dropY: _dropY,
+                                      dropFruitRadius: _preview?.radius ?? 20,
+                                      showDropper:
+                                          _boxReady &&
+                                          !_isGameOver &&
+                                          !_isPaused,
                                     ),
                                     size: size,
                                   ),

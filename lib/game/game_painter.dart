@@ -4,6 +4,15 @@ import 'package:flutter/material.dart';
 import '../models/fruit_data.dart';
 import 'fruit_physics.dart';
 
+/// Mutable cloud state — updated each tick in GameScreen, read by GamePainter.
+class CloudState {
+  double x;
+  double y;
+  double width;
+  double speed; // px/s, positive = right
+  CloudState({required this.x, required this.y, required this.width, required this.speed});
+}
+
 class GamePainter extends CustomPainter {
   final List<FruitParticle> fruits;
   final List<MergeParticle> particles;
@@ -14,6 +23,14 @@ class GamePainter extends CustomPainter {
   final double gameOverLineY;
   final double dangerLevel;
   final Map<FruitType, ui.Image> fruitImages;
+  // ── Drop zone visuals ─────────────────────────────────────────────
+  final List<CloudState> clouds;
+  final ui.Image? cloudImage;
+  final ui.Image? branchImage;
+  final double dropX;
+  final double dropY;
+  final double dropFruitRadius;
+  final bool showDropper;
 
   GamePainter({
     required this.fruits,
@@ -25,6 +42,13 @@ class GamePainter extends CustomPainter {
     required this.gameOverLineY,
     this.dangerLevel = 0,
     this.fruitImages = const {},
+    this.clouds = const [],
+    this.cloudImage,
+    this.branchImage,
+    this.dropX = 0,
+    this.dropY = 0,
+    this.dropFruitRadius = 20,
+    this.showDropper = false,
   });
 
   // ── Pre-allocated Paints (created once, reused every frame) ──────
@@ -49,11 +73,14 @@ class GamePainter extends CustomPainter {
     ..color = const Color(0x47FFFFFF)
     ..strokeWidth = 3.5;
   static final Paint _particlePaint = Paint();
+  static final Paint _cloudPaint    = Paint()..filterQuality = FilterQuality.low;
 
   @override
   void paint(Canvas canvas, Size size) {
     _drawContainer(canvas);
+    _drawClouds(canvas);
     _drawParticles(canvas);
+    if (showDropper && branchImage != null) _drawBranch(canvas);
     _drawFruits(canvas);
   }
 
@@ -115,6 +142,46 @@ class GamePainter extends CustomPainter {
       Offset(boxLeft + 4, boxTop),
       Offset(boxLeft + 4, boxBottom - 12),
       _shinePaint,
+    );
+  }
+
+  // ── Clouds (drop zone, above jar) ───────────────────────────────
+  void _drawClouds(Canvas canvas) {
+    final img = cloudImage;
+    if (img == null || clouds.isEmpty) return;
+    // Clip clouds to the drop zone (above jar top)
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(0, 0, boxRight + 20, boxTop - 4));
+    final src = Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
+    for (final c in clouds) {
+      final h = c.width * img.height / img.width;
+      _cloudPaint.color = Colors.white.withValues(alpha: 0.62);
+      canvas.drawImageRect(
+        img,
+        src,
+        Rect.fromCenter(center: Offset(c.x, c.y), width: c.width, height: h),
+        _cloudPaint,
+      );
+    }
+    canvas.restore();
+  }
+
+  // ── Branch dropper ────────────────────────────────────────────────
+  void _drawBranch(Canvas canvas) {
+    final img = branchImage!;
+    const branchW = 90.0;
+    final branchH = branchW * img.height / img.width;
+    // Hang point within the rendered branch (right-side underside of branch)
+    // Approx 82% across, 68% down = where the fruit tip attaches
+    final hangX = branchW * 0.82;
+    final hangY = branchH * 0.68;
+    final left = dropX - hangX;
+    final top  = dropY - dropFruitRadius - 6 - hangY;
+    canvas.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromLTWH(left, top, branchW, branchH),
+      Paint()..filterQuality = FilterQuality.medium,
     );
   }
 
