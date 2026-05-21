@@ -162,11 +162,15 @@ class FruitData {
     ),
   };
 
-  /// Get all fruits in evolution order
-  static List<FruitData> get allFruits =>
-      FruitType.values.map((t) => FruitData.fromType(t)).toList();
+  /// All fruits in evolution order — cached, never allocates on access
+  static final List<FruitData> _allFruitsCache =
+      FruitType.values.map((t) => _fruitDataMap[t]!).toList();
 
-  /// Get only droppable fruits (first N types)
-  static List<FruitData> get droppableFruits =>
-      allFruits.where((f) => f.level <= GameConstants.maxDropFruitLevel).toList();
+  static List<FruitData> get allFruits => _allFruitsCache;
+
+  /// Droppable fruits — cached, never allocates on access
+  static final List<FruitData> _droppableFruitsCache =
+      _allFruitsCache.where((f) => f.level <= GameConstants.maxDropFruitLevel).toList();
+
+  static List<FruitData> get droppableFruits => _droppableFruitsCache;
 }

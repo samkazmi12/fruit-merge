@@ -81,6 +81,18 @@ class _GameScreenState extends State<GameScreen>
   double _dangerLevel = 0;
   bool _wasInDanger = false;
 
+  // ── Physics alive-list buffer (reused every tick, no per-frame alloc) ──
+  final List<FruitParticle> _aliveFruits = [];
+  bool _hasDead = false; // set true whenever a fruit's alive → false
+
+  // ── Drop-weight cache (computed once, avoids List.generate per drop) ──
+  static final List<double> _dropWeights = () {
+    final d = FruitData.droppableFruits;
+    return List.generate(d.length, (i) => (d.length - i).toDouble());
+  }();
+  static final double _dropWeightTotal =
+      _dropWeights.fold(0.0, (s, w) => s + w);
+
   // ── Best fruit this session ──────────────────────────────────────
   int _bestFruitIndex = 0;   // FruitType.index of best merged/dropped
 
@@ -201,19 +213,15 @@ class _GameScreenState extends State<GameScreen>
   }
 
   FruitType _randomType({bool lucky = false}) {
-    final droppable = FruitData.droppableFruits;
+    final droppable = FruitData.droppableFruits; // cached — no allocation
     if (lucky) {
-      // Give next tier fruit (cap at level 4 = apple)
       final currentIdx = droppable.indexWhere((f) => f.type == _nextType);
       final luckIdx = (currentIdx + 1).clamp(0, droppable.length - 1);
       return droppable[luckIdx].type;
     }
-    final wts = List.generate(
-        droppable.length, (i) => (droppable.length - i).toDouble());
-    final total = wts.reduce((a, b) => a + b);
-    var r = _rng.nextDouble() * total;
+    var r = _rng.nextDouble() * _dropWeightTotal;
     for (int i = 0; i < droppable.length; i++) {
-      r -= wts[i];
+      r -= _dropWeights[i];
       if (r <= 0) return droppable[i].type;
     }
     return droppable[0].type;
@@ -342,12 +350,21 @@ class _GameScreenState extends State<GameScreen>
 
     if (_isPaused || _isGameOver || _isWatermelonWin) return;
 
-    _physics!.step(_fruits.where((f) => f.alive).toList(), dt);
-    _physics!.stepParticles(_particles, dt);
-    _physics!.stepPopups(_popups, dt);
+    // Rebuild alive buffer — reuses the same List object every tick
+    _aliveFruits.clear();
+    for (final f in _fruits) {
+      if (f.alive) _aliveFruits.add(f);
+    }
 
-    _particles.removeWhere((p) => !p.alive);
-    _popups.removeWhere((p) => !p.alive);
+    _physics!.step(_aliveFruits, dt);
+    if (_particles.isNotEmpty) {
+      _physics!.stepParticles(_particles, dt);
+      _particles.removeWhere((p) => !p.alive);
+    }
+    if (_popups.isNotEmpty) {
+      _physics!.stepPopups(_popups, dt);
+      _popups.removeWhere((p) => !p.alive);
+    }
 
     // Combo timer
     if (_comboTimer > 0) {
@@ -359,13 +376,17 @@ class _GameScreenState extends State<GameScreen>
       _comboBannerOpacity = (_comboBannerOpacity - dt * 1.6).clamp(0, 1);
       _comboBannerScale   = (_comboBannerScale - dt * 2.5).clamp(1.0, 2.0);
     }
-    // Level up banner was removed as XP is now granted at game over
 
-    final alive = _fruits.where((f) => f.alive).toList();
-    final merges = _physics!.detectMerges(alive);
+    final merges = _physics!.detectMerges(_aliveFruits);
     for (final (a, b) in merges) { _handleMerge(a, b); }
 
-    _fruits.removeWhere((f) => !f.alive);
+    // Only prune dead fruits when merges (or kills) happened this tick
+    if (_hasDead) {
+      _fruits.removeWhere((f) => !f.alive);
+      _aliveFruits.removeWhere((f) => !f.alive);
+      _hasDead = false;
+    }
+
     _updateDangerLevel();
     _checkGameOver();
     _tickNotifier.value++;
@@ -385,6 +406,7 @@ class _GameScreenState extends State<GameScreen>
 
     a.alive = false;
     b.alive = false;
+    _hasDead = true;
     _sessionMerges++;
     if (widget.storage.vibrationEnabled) HapticFeedback.mediumImpact();
 
@@ -413,9 +435,13 @@ class _GameScreenState extends State<GameScreen>
     if (data.type == FruitType.watermelon) xp += LevelSystem.xpWatermelon;
     _gainXp(xp);
 
-    // Particles + popup
-    _particles.addAll(
-        FruitPhysics.createMergeBurst(mx, my, data.color, a.radius));
+    // Particles + popup — cap total to prevent GC pressure during cascades
+    final burst = _physics!.createMergeBurst(mx, my, data.color, a.radius);
+    if (_particles.length + burst.length > 50) {
+      final excess = (_particles.length + burst.length - 50).clamp(0, _particles.length);
+      if (excess > 0) _particles.removeRange(0, excess);
+    }
+    _particles.addAll(burst);
     _popups.add(ScorePopup(
       x: mx, y: my - a.radius - 10,
       text: '+$gained',
@@ -469,10 +495,10 @@ class _GameScreenState extends State<GameScreen>
 
   void _updateDangerLevel() {
     double highestY = _boxBottom;
-    for (final f in _fruits) {
-      if (!f.alive || f.isPreview) continue;
-      if (f.y - f.radius < _boxTop) continue; // fruit above jar (just dropped)
-      if (f.vy > 50) continue; // fruit in fast free-fall, not yet settled
+    for (final f in _aliveFruits) {
+      if (f.isPreview) continue;
+      if (f.y - f.radius < _boxTop) continue;
+      if (f.vy > 50) continue;
       final topEdge = f.y - f.radius;
       if (topEdge < highestY) highestY = topEdge;
     }
@@ -485,8 +511,8 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _checkGameOver() {
-    for (final f in _fruits) {
-      if (!f.alive || f.isPreview || f.isMerging) continue;
+    for (final f in _aliveFruits) {
+      if (f.isPreview || f.isMerging) continue;
       if (f.y - f.radius < _gameOverLineY &&
           f.vy.abs() < 30 && f.vx.abs() < 30) {
         _triggerGameOver();
@@ -519,7 +545,8 @@ class _GameScreenState extends State<GameScreen>
   void _restartGame() {
     widget.storage.clearGameState();
     setState(() {
-      _fruits.clear(); _particles.clear(); _popups.clear();
+      _fruits.clear(); _particles.clear(); _popups.clear(); _aliveFruits.clear();
+      _hasDead = false;
       _preview = null; _score = 0; _combo = 0; _comboTimer = 0;
       _comboBannerOpacity = 0; _dangerLevel = 0; _wasInDanger = false;
       _isPaused = false; _isGameOver = false; _isWatermelonWin = false;
@@ -688,8 +715,8 @@ class _GameScreenState extends State<GameScreen>
                         ? RepaintBoundary(
                             child: CustomPaint(
                               painter: GamePainter(
-                                fruits:   _fruits.where((f) => f.alive).toList(),
-                                particles: List.from(_particles),
+                                fruits:   _aliveFruits,
+                                particles: _particles,
                                 boxLeft: _boxLeft, boxRight: _boxRight,
                                 boxTop: _boxTop, boxBottom: _boxBottom,
                                 gameOverLineY: _gameOverLineY,

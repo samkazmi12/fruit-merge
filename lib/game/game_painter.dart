@@ -27,6 +27,29 @@ class GamePainter extends CustomPainter {
     this.fruitImages = const {},
   });
 
+  // ── Pre-allocated Paints (created once, reused every frame) ──────
+  static final Paint _bgPaint = Paint()
+    ..color = const Color(0xE0E8DFD5);
+  static final Paint _innerShadowPaint = Paint();
+  static final Paint _dividerPaint = Paint()
+    ..color = const Color(0x2EFFFFFF)
+    ..strokeWidth = 2.0;
+  static final Paint _glowPaint = Paint()
+    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14)
+    ..strokeWidth = 18;
+  static final Paint _dangerLinePaint = Paint()
+    ..color = const Color(0xBBE53935)
+    ..strokeWidth = 1.8;
+  static final Paint _wallPaint = Paint()
+    ..color = const Color(0xFFBBAAA0)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 3.5
+    ..strokeCap = StrokeCap.round;
+  static final Paint _shinePaint = Paint()
+    ..color = const Color(0x47FFFFFF)
+    ..strokeWidth = 3.5;
+  static final Paint _particlePaint = Paint();
+
   @override
   void paint(Canvas canvas, Size size) {
     _drawContainer(canvas);
@@ -39,110 +62,87 @@ class GamePainter extends CustomPainter {
     final w = boxRight - boxLeft;
 
     // Background
-    final bgPaint = Paint()..color = const Color(0xFFE8DFD5).withValues(alpha: 0.88);
     canvas.drawRRect(
       RRect.fromLTRBAndCorners(boxLeft, boxTop, boxRight, boxBottom,
           bottomLeft: const Radius.circular(14),
           bottomRight: const Radius.circular(14)),
-      bgPaint,
+      _bgPaint,
     );
 
-    // Inner shadow at top
-    canvas.drawRect(
-      Rect.fromLTWH(boxLeft, boxTop, w, 28),
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.black.withValues(alpha: 0.08), Colors.transparent],
-        ).createShader(Rect.fromLTWH(boxLeft, boxTop, w, 28)),
-    );
+    // Inner shadow at top (const gradient avoids allocation; only createShader allocates)
+    final shadowRect = Rect.fromLTWH(boxLeft, boxTop, w, 28);
+    _innerShadowPaint.shader = const LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [Color(0x14000000), Colors.transparent],
+    ).createShader(shadowRect);
+    canvas.drawRect(shadowRect, _innerShadowPaint);
 
     // Centre divider line
     canvas.drawLine(
       Offset(boxLeft + w / 2, boxTop),
       Offset(boxLeft + w / 2, boxBottom),
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.18)
-        ..strokeWidth = 2.0,
+      _dividerPaint,
     );
 
-    // ── Danger glow on walls when box is filling up ──────────────
+    // ── Danger glow on walls ──────────────────────────────────────
     if (dangerLevel > 0) {
-      final glowAlpha = (dangerLevel.clamp(0.0, 1.0) * 0.55);
-      final glowColor = Color.lerp(
-        const Color(0xFFFFB74D), // orange warning
-        const Color(0xFFE53935), // red danger
+      _glowPaint.color = Color.lerp(
+        const Color(0xFFFFB74D),
+        const Color(0xFFE53935),
         dangerLevel,
-      )!.withValues(alpha: glowAlpha);
-
-      final glowPaint = Paint()
-        ..color = glowColor
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
-
-      // Left wall glow
-      canvas.drawLine(
-        Offset(boxLeft, boxTop), Offset(boxLeft, boxBottom), glowPaint..strokeWidth = 18);
-      // Right wall glow
-      canvas.drawLine(
-        Offset(boxRight, boxTop), Offset(boxRight, boxBottom), glowPaint);
+      )!.withValues(alpha: dangerLevel.clamp(0.0, 1.0) * 0.55);
+      canvas.drawLine(Offset(boxLeft, boxTop), Offset(boxLeft, boxBottom), _glowPaint);
+      canvas.drawLine(Offset(boxRight, boxTop), Offset(boxRight, boxBottom), _glowPaint);
     }
 
-    // ── Danger / game-over dashed line ─────────────────────────
-    final dangerPaint = Paint()
-      ..color = const Color(0xBBE53935)
-      ..strokeWidth = 1.8;
+    // ── Danger / game-over dashed line ────────────────────────────
     const dash = 12.0, gap = 7.0;
     var x = boxLeft + 4.0;
     while (x < boxRight - 4.0) {
       final xEnd = (x + dash).clamp(boxLeft, boxRight - 4.0);
-      canvas.drawLine(Offset(x, gameOverLineY), Offset(xEnd, gameOverLineY), dangerPaint);
+      canvas.drawLine(Offset(x, gameOverLineY), Offset(xEnd, gameOverLineY), _dangerLinePaint);
       x += dash + gap;
     }
 
-    // ── Walls (drawn on top of glow) ───────────────────────────
-    final wallPaint = Paint()
-      ..color = const Color(0xFFBBAAA0)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawLine(Offset(boxLeft, boxTop - 10), Offset(boxLeft, boxBottom), wallPaint);
-    canvas.drawLine(Offset(boxRight, boxTop - 10), Offset(boxRight, boxBottom), wallPaint);
-    canvas.drawLine(Offset(boxLeft, boxBottom), Offset(boxRight, boxBottom), wallPaint);
+    // ── Walls ─────────────────────────────────────────────────────
+    canvas.drawLine(Offset(boxLeft, boxTop - 10), Offset(boxLeft, boxBottom), _wallPaint);
+    canvas.drawLine(Offset(boxRight, boxTop - 10), Offset(boxRight, boxBottom), _wallPaint);
+    canvas.drawLine(Offset(boxLeft, boxBottom), Offset(boxRight, boxBottom), _wallPaint);
 
     // Glass shine strip
     canvas.drawLine(
       Offset(boxLeft + 4, boxTop),
       Offset(boxLeft + 4, boxBottom - 12),
-      Paint()..color = Colors.white.withValues(alpha: 0.28)..strokeWidth = 3.5,
+      _shinePaint,
     );
   }
 
   // ── Merge particles ──────────────────────────────────────────────
   void _drawParticles(Canvas canvas) {
+    if (particles.isEmpty) return;
     for (final p in particles) {
       if (!p.alive) continue;
       final alpha = (p.life / p.maxLife).clamp(0.0, 1.0);
-      canvas.drawCircle(
-        Offset(p.x, p.y),
-        p.radius,
-        Paint()..color = p.color.withValues(alpha: alpha),
-      );
+      _particlePaint.color = p.color.withValues(alpha: alpha);
+      canvas.drawCircle(Offset(p.x, p.y), p.radius, _particlePaint);
     }
   }
 
   // ── Fruits ───────────────────────────────────────────────────────
   void _drawFruits(Canvas canvas) {
-    final regular = fruits.where((f) => f.alive && !f.isPreview);
-    final preview = fruits.where((f) => f.alive && f.isPreview);
-
-    for (final f in regular) {
-      _drawFruit(canvas, f);
+    // Single pass: draw regular fruits first, defer preview to draw last (on top)
+    FruitParticle? previewFruit;
+    for (final f in fruits) {
+      if (f.isPreview) {
+        previewFruit = f;
+      } else {
+        _drawFruit(canvas, f);
+      }
     }
-    for (final f in preview) {
-      _drawFruit(canvas, f);
-      _drawDropGuide(canvas, f);
+    if (previewFruit != null) {
+      _drawFruit(canvas, previewFruit);
+      _drawDropGuide(canvas, previewFruit);
     }
   }
 
