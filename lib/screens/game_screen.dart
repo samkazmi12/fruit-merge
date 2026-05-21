@@ -172,13 +172,12 @@ class _GameScreenState extends State<GameScreen>
     // Constrain jar max width so it doesn't deform on tablets/landscape
     final effectiveWidth = size.width.clamp(0.0, 450.0);
     final offsetLeft = (size.width - effectiveWidth) / 2;
-    // Constrain jar max height relative to width so it's not super tall on iPads
-    final maxJarHeight = effectiveWidth * 1.8; // Standard 16:9 vertical feel
-    
-    // Narrower jar + higher botPad for power-up toolbar
+    // Cap jar height so it doesn't dominate the screen on tall/large devices
+    final maxJarHeight = effectiveWidth * 1.3;
+
     final sf = (size.width / 390).clamp(0.75, 1.35);
     final hudH = 165.0 * sf;
-    const sidePad = 40.0;
+    const sidePad = 8.0; // ~96% screen width on phones
     final botPad = 100.0 * sf;
     _boxLeft      = offsetLeft + sidePad;
     _boxRight     = offsetLeft + effectiveWidth - sidePad;
@@ -472,7 +471,10 @@ class _GameScreenState extends State<GameScreen>
     double highestY = _boxBottom;
     for (final f in _fruits) {
       if (!f.alive || f.isPreview) continue;
-      if (f.y - f.radius < highestY) highestY = f.y - f.radius;
+      if (f.y - f.radius < _boxTop) continue; // fruit above jar (just dropped)
+      if (f.vy > 50) continue; // fruit in fast free-fall, not yet settled
+      final topEdge = f.y - f.radius;
+      if (topEdge < highestY) highestY = topEdge;
     }
     final boxH  = _boxBottom - _boxTop;
     final filled = (_boxBottom - highestY) / boxH;
