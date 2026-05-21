@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/storage_service.dart';
+import '../utils/responsive.dart';
 
 class StoreScreen extends StatefulWidget {
   final StorageService storage;
@@ -31,17 +32,17 @@ class _StoreScreenState extends State<StoreScreen> {
             children: [
               // ── App bar ──────────────────────────────────────
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                padding: EdgeInsets.fromLTRB(context.s(16), context.s(16), context.s(16), context.s(8)),
                 child: Row(
                   children: [
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
                       child: Container(
-                        width: 44,
-                        height: 44,
+                        width: context.s(44),
+                        height: context.s(44),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(context.s(14)),
                           border: Border.all(
                             color: Colors.white.withValues(alpha: 0.2),
                           ),
@@ -52,36 +53,36 @@ class _StoreScreenState extends State<StoreScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 14),
+                    SizedBox(width: context.s(14)),
                     Text(
                       '🛒 Store',
                       style: GoogleFonts.fredoka(
-                        fontSize: 28,
+                        fontSize: context.sp(28),
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
                     ),
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: context.s(12),
+                        vertical: context.s(6),
                       ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFD600).withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(context.s(20)),
                         border: Border.all(color: const Color(0xFFFFD600)),
                       ),
                       child: Row(
                         children: [
-                          const Text('🪙', style: TextStyle(fontSize: 18)),
-                          const SizedBox(width: 6),
+                          Text('🪙', style: TextStyle(fontSize: context.sp(18))),
+                          SizedBox(width: context.s(6)),
                           Text(
                             '${widget.storage.coins}',
                             style: GoogleFonts.fredoka(
                               color: const Color(0xFFFFD600),
                               fontWeight: FontWeight.bold,
-                              fontSize: 18,
+                              fontSize: context.sp(18),
                             ),
                           ),
                         ],
@@ -93,15 +94,15 @@ class _StoreScreenState extends State<StoreScreen> {
 
               // ── Coming soon banner ───────────────────────────
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                padding: const EdgeInsets.all(16),
+                margin: EdgeInsets.symmetric(horizontal: context.s(16), vertical: context.s(8)),
+                padding: EdgeInsets.all(context.s(16)),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [Color(0xFFFFD600), Color(0xFFFF9800)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(context.s(18)),
                   boxShadow: [
                     BoxShadow(
                       color: const Color(0xFFFFD600).withValues(alpha: 0.35),
@@ -112,8 +113,8 @@ class _StoreScreenState extends State<StoreScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Text('🚧', style: TextStyle(fontSize: 30)),
-                    const SizedBox(width: 12),
+                    Text('🚧', style: TextStyle(fontSize: context.sp(30))),
+                    SizedBox(width: context.s(12)),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,7 +123,7 @@ class _StoreScreenState extends State<StoreScreen> {
                           Text(
                             'Coming Soon!',
                             style: GoogleFonts.fredoka(
-                              fontSize: 18,
+                              fontSize: context.sp(18),
                               fontWeight: FontWeight.bold,
                               color: const Color(0xFF3E2723),
                             ),
@@ -130,7 +131,7 @@ class _StoreScreenState extends State<StoreScreen> {
                           Text(
                             'Fruit skins & themes on the way!',
                             style: GoogleFonts.fredoka(
-                              fontSize: 12,
+                              fontSize: context.sp(12),
                               color: const Color(0xFF5D4037),
                             ),
                           ),
@@ -144,14 +145,15 @@ class _StoreScreenState extends State<StoreScreen> {
               // ── Grid ─────────────────────────────────────────
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  padding: EdgeInsets.fromLTRB(context.s(16), context.s(8), context.s(16), context.s(16)),
                   child: GridView.count(
                     crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
+                    mainAxisSpacing: context.s(12),
+                    crossAxisSpacing: context.s(12),
                     childAspectRatio: 0.88,
                     children: [
                       _buildPowerUpCard(
+                        context,
                         title: 'Bomb x3',
                         emoji: '💣',
                         desc: 'Destroy tight clusters',
@@ -166,6 +168,7 @@ class _StoreScreenState extends State<StoreScreen> {
                         },
                       ),
                       _buildPowerUpCard(
+                        context,
                         title: 'Shaker x3',
                         emoji: '🪇',
                         desc: 'Shake up the jar',
@@ -180,6 +183,7 @@ class _StoreScreenState extends State<StoreScreen> {
                         },
                       ),
                       _buildPowerUpCard(
+                        context,
                         title: 'Sniper x3',
                         emoji: '🎯',
                         desc: 'Instantly upgrade a fruit',
@@ -193,8 +197,8 @@ class _StoreScreenState extends State<StoreScreen> {
                           }
                         },
                       ),
-                      _buildThemeCard('Neon Theme', '✨', 'Coming Soon'),
-                      _buildThemeCard('Galaxy Theme', '🌌', 'Coming Soon'),
+                      _buildThemeCard(context, 'Neon Theme', '✨', 'Coming Soon'),
+                      _buildThemeCard(context, 'Galaxy Theme', '🌌', 'Coming Soon'),
                     ],
                   ),
                 ),
@@ -206,7 +210,8 @@ class _StoreScreenState extends State<StoreScreen> {
     );
   }
 
-  Widget _buildPowerUpCard({
+  Widget _buildPowerUpCard(
+    BuildContext context, {
     required String title,
     required String emoji,
     required String desc,
@@ -218,7 +223,7 @@ class _StoreScreenState extends State<StoreScreen> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(context.s(20)),
         border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
         boxShadow: [
           BoxShadow(
@@ -231,38 +236,38 @@ class _StoreScreenState extends State<StoreScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 42)),
-          const SizedBox(height: 6),
+          Text(emoji, style: TextStyle(fontSize: context.sp(42))),
+          SizedBox(height: context.s(6)),
           Text(
             title,
             style: GoogleFonts.fredoka(
-              fontSize: 15,
+              fontSize: context.sp(15),
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
           ),
           Text(
             'Owned: $currentCount',
-            style: GoogleFonts.fredoka(fontSize: 11, color: Colors.white70),
+            style: GoogleFonts.fredoka(fontSize: context.sp(11), color: Colors.white70),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: context.s(8)),
           GestureDetector(
             onTap: canAfford ? onBuy : null,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: EdgeInsets.symmetric(horizontal: context.s(14), vertical: context.s(8)),
               decoration: BoxDecoration(
                 color: canAfford ? const Color(0xFF4CAF50) : Colors.white24,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(context.s(20)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('🪙', style: TextStyle(fontSize: 12)),
-                  const SizedBox(width: 4),
+                  Text('🪙', style: TextStyle(fontSize: context.sp(12))),
+                  SizedBox(width: context.s(4)),
                   Text(
                     '$price',
                     style: GoogleFonts.fredoka(
-                      fontSize: 13,
+                      fontSize: context.sp(13),
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
@@ -276,11 +281,11 @@ class _StoreScreenState extends State<StoreScreen> {
     );
   }
 
-  Widget _buildThemeCard(String title, String emoji, String desc) {
+  Widget _buildThemeCard(BuildContext context, String title, String emoji, String desc) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(context.s(20)),
         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
       ),
       child: Stack(
@@ -289,20 +294,20 @@ class _StoreScreenState extends State<StoreScreen> {
           Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(emoji, style: const TextStyle(fontSize: 32)),
-              const SizedBox(height: 10),
+              Text(emoji, style: TextStyle(fontSize: context.sp(32))),
+              SizedBox(height: context.s(10)),
               Text(
                 title,
-                style: GoogleFonts.fredoka(fontSize: 14, color: Colors.white54),
+                style: GoogleFonts.fredoka(fontSize: context.sp(14), color: Colors.white54),
               ),
             ],
           ),
           Positioned(
-            top: 10,
-            right: 10,
+            top: context.s(10),
+            right: context.s(10),
             child: Icon(
               Icons.lock_rounded,
-              size: 16,
+              size: context.s(16),
               color: Colors.white.withValues(alpha: 0.3),
             ),
           ),

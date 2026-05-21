@@ -11,13 +11,15 @@ class FruitParticle {
   double vx;
   double vy;
   double radius;
-  double angle;           // rotation angle in radians  ← NEW
-  double angularVel;      // spin speed rad/s           ← NEW
+  double angle;
+  double angularVel;
   bool isPreview;
   bool isMerging;
   double mergeGlow;
   double spawnScale;
   bool alive;
+  double blinkTimer;   // > 0 while eyes are closed, counts down to 0
+  double nextBlinkIn;  // seconds until next blink starts
 
   FruitParticle({
     required this.id,
@@ -34,10 +36,39 @@ class FruitParticle {
     this.mergeGlow = 0,
     this.spawnScale = 1.0,
     this.alive = true,
-  });
+    this.blinkTimer = 0,
+    double? nextBlinkIn,
+  }) : nextBlinkIn = nextBlinkIn ?? (1.5 + (id * 0.618033988749895) % 4.5);
+
+  bool get isBlinking => blinkTimer > 0 && !isPreview;
 
   FruitData get data => FruitData.fromType(type);
   Offset get center => Offset(x, y);
+
+  Map<String, dynamic> toJson() => {
+    'id': id, 'type': type.name,
+    'x': x, 'y': y, 'vx': vx, 'vy': vy,
+    'radius': radius, 'angle': angle, 'angularVel': angularVel,
+    'isPreview': isPreview, 'isMerging': isMerging,
+    'mergeGlow': mergeGlow, 'spawnScale': spawnScale, 'alive': alive,
+    'blinkTimer': blinkTimer, 'nextBlinkIn': nextBlinkIn,
+  };
+
+  factory FruitParticle.fromJson(Map<String, dynamic> j) => FruitParticle(
+    id: j['id'] as int,
+    type: FruitType.values.byName(j['type'] as String),
+    x: (j['x'] as num).toDouble(), y: (j['y'] as num).toDouble(),
+    vx: (j['vx'] as num).toDouble(), vy: (j['vy'] as num).toDouble(),
+    radius: (j['radius'] as num).toDouble(),
+    angle: (j['angle'] as num).toDouble(),
+    angularVel: (j['angularVel'] as num).toDouble(),
+    isPreview: j['isPreview'] as bool, isMerging: j['isMerging'] as bool,
+    mergeGlow: (j['mergeGlow'] as num).toDouble(),
+    spawnScale: (j['spawnScale'] as num).toDouble(),
+    alive: j['alive'] as bool,
+    blinkTimer: (j['blinkTimer'] as num?)?.toDouble() ?? 0.0,
+    nextBlinkIn: (j['nextBlinkIn'] as num?)?.toDouble(),
+  );
 }
 
 // ── Merge particle for burst effect ─────────────────────────────
@@ -88,6 +119,8 @@ class FruitPhysics {
   final double boxTop;
   final double boxBottom;
 
+  final Random _rng = Random();
+
   static const double gravity = 1800.0;
   static const double damping = 0.55;
   static const double friction = 0.92;
@@ -115,15 +148,11 @@ class FruitPhysics {
       f.x += f.vx * dt;
       f.y += f.vy * dt;
 
-      // ── Rotation: spin based on horizontal velocity ──────────
-      // Derive angular velocity from horizontal motion (rolling feel)
-      final targetSpin = f.vx / (f.radius.clamp(10, 100)) * 1.2;
-      f.angularVel = f.angularVel * 0.85 + targetSpin * 0.15;
+      // ── Rotation: tilt from impacts only, decays to rest ─────
+      f.angularVel *= 0.94;
+      if (f.angularVel.abs() < 0.005) f.angularVel = 0;
       f.angle += f.angularVel * dt;
-      // Slow spin when nearly stopped
-      if (f.vy.abs() < sleepThreshold && f.vx.abs() < sleepThreshold) {
-        f.angularVel *= angularDamping;
-      }
+      f.angle = f.angle.clamp(-0.26, 0.26); // max ±15 degrees
 
       // Spawn scale animation
       if (f.spawnScale < 1.0) {
@@ -133,6 +162,18 @@ class FruitPhysics {
       // Merge glow fade
       if (f.mergeGlow > 0) {
         f.mergeGlow = (f.mergeGlow - dt * 2.5).clamp(0.0, 1.0);
+      }
+
+      // Blink
+      if (f.blinkTimer > 0) {
+        f.blinkTimer -= dt;
+        if (f.blinkTimer < 0) f.blinkTimer = 0;
+      } else {
+        f.nextBlinkIn -= dt;
+        if (f.nextBlinkIn <= 0) {
+          f.blinkTimer = 0.12 + _rng.nextDouble() * 0.06;
+          f.nextBlinkIn = 3.0 + _rng.nextDouble() * 5.0;
+        }
       }
 
       _resolveWalls(f);
@@ -152,8 +193,6 @@ class FruitPhysics {
       f.y = boxBottom - r;
       f.vy = -f.vy.abs() * damping;
       f.vx *= friction;
-      // Floor friction adds opposite spin
-      f.angularVel -= f.vx * 0.004;
       if (f.vy.abs() < sleepThreshold) f.vy = 0;
     }
     // Left wall

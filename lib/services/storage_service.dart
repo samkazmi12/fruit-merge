@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persistent storage — game settings, scores, profile, XP, stats
@@ -38,6 +39,7 @@ class StorageService {
   Future<void> setHighScore(int score) async {
     if (score > highScore) await _prefs.setInt(_highScoreKey, score);
   }
+  Future<void> resetHighScore() async => _prefs.setInt(_highScoreKey, 0);
 
   // ── Sound / Music / Vibration ──────────────────────────────────
   bool get soundEnabled     => _prefs.getBool(_soundKey)     ?? true;
@@ -104,4 +106,25 @@ class StorageService {
   Future<void> consumeBomb() async { if (bombCount > 0) await _prefs.setInt(_bombCountKey, bombCount - 1); }
   Future<void> consumeShaker() async { if (shakerCount > 0) await _prefs.setInt(_shakerCountKey, shakerCount - 1); }
   Future<void> consumeSniper() async { if (sniperCount > 0) await _prefs.setInt(_sniperCountKey, sniperCount - 1); }
+
+  // ── Saved game state ───────────────────────────────────────────
+  static const _savedGameKey = 'saved_game';
+
+  bool get hasSavedGame => _prefs.containsKey(_savedGameKey);
+
+  Map<String, dynamic>? loadGameState() {
+    final s = _prefs.getString(_savedGameKey);
+    if (s == null) return null;
+    try {
+      return jsonDecode(s) as Map<String, dynamic>;
+    } catch (_) {
+      _prefs.remove(_savedGameKey);
+      return null;
+    }
+  }
+
+  Future<void> saveGameState(Map<String, dynamic> state) async =>
+      _prefs.setString(_savedGameKey, jsonEncode(state));
+
+  Future<void> clearGameState() async => _prefs.remove(_savedGameKey);
 }

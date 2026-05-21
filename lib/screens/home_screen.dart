@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/level_system.dart';
 import '../services/storage_service.dart';
+import '../utils/responsive.dart';
 
 class HomeScreen extends StatefulWidget {
   final StorageService storage;
@@ -76,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 children: [
                   // ── Top bar: Profile button ────────────────
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    padding: EdgeInsets.fromLTRB(context.s(16), context.s(12), context.s(16), 0),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
@@ -86,11 +87,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             setState(() {}); // refresh level after return
                           },
                           child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 7),
+                            padding: EdgeInsets.symmetric(
+                                horizontal: context.s(12), vertical: context.s(7)),
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(context.s(20)),
                               border: Border.all(
                                   color: Colors.white.withValues(alpha: 0.25)),
                             ),
@@ -98,21 +99,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(widget.storage.avatarEmoji,
-                                    style: const TextStyle(fontSize: 20)),
-                                const SizedBox(width: 6),
+                                    style: TextStyle(fontSize: context.sp(20))),
+                                SizedBox(width: context.s(6)),
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(widget.storage.playerName,
                                         style: GoogleFonts.fredoka(
-                                          fontSize: 13,
+                                          fontSize: context.sp(13),
                                           fontWeight: FontWeight.bold,
                                           color: Colors.white,
                                         )),
                                     Text('Lv.$level',
                                         style: GoogleFonts.fredoka(
-                                          fontSize: 11,
+                                          fontSize: context.sp(11),
                                           color: const Color(0xFFFFD600),
                                         )),
                                   ],
@@ -134,8 +135,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       offset: Offset(0, _titleBounce.value), child: child),
                     child: Column(
                       children: [
-                        const Text('🍉', style: TextStyle(fontSize: 80)),
-                        const SizedBox(height: 6),
+                        Image.asset('assets/images/splash_logo.png',
+                            width: context.s(100), height: context.s(100)),
+                        SizedBox(height: context.s(6)),
                         ShaderMask(
                           shaderCallback: (b) => const LinearGradient(
                             colors: [Color(0xFFFF6EC7), Color(0xFFFFD600),
@@ -144,40 +146,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ).createShader(b),
                           child: Text('Fruit Merge',
                               style: GoogleFonts.fredoka(
-                                fontSize: 44, fontWeight: FontWeight.bold,
+                                fontSize: context.sp(44), fontWeight: FontWeight.bold,
                                 color: Colors.white, letterSpacing: 1.5,
                               )),
                         ),
                         Text('PUZZLE',
                             style: GoogleFonts.fredoka(
-                              fontSize: 16, letterSpacing: 9,
+                              fontSize: context.sp(16), letterSpacing: 9,
                               color: Colors.white.withValues(alpha: 0.5),
                             )),
                       ],
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  SizedBox(height: context.s(16)),
 
                   // ── High score pill ────────────────────────
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 8),
+                    padding: EdgeInsets.symmetric(
+                        horizontal: context.s(20), vertical: context.s(8)),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(context.s(20)),
                       border: Border.all(
                           color: Colors.white.withValues(alpha: 0.2)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.emoji_events,
-                            color: Color(0xFFFFD600), size: 18),
-                        const SizedBox(width: 6),
+                        Icon(Icons.emoji_events,
+                            color: const Color(0xFFFFD600), size: context.s(18)),
+                        SizedBox(width: context.s(6)),
                         Text('Best: ${widget.storage.highScore}',
                             style: GoogleFonts.fredoka(
-                              fontSize: 15, color: Colors.white,
+                              fontSize: context.sp(15), color: Colors.white,
                               fontWeight: FontWeight.w500,
                             )),
                       ],
@@ -186,8 +188,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
                   const Spacer(flex: 2),
 
-                  // ── Play button ────────────────────────────
+                  // ── Continue button (only when saved game exists) ──
+                  if (widget.storage.hasSavedGame) ...[
+                    _mainBtn(
+                      context,
+                      label: 'CONTINUE',
+                      icon: Icons.play_circle_rounded,
+                      colors: const [Color(0xFF43A047), Color(0xFF1B5E20)],
+                      onTap: () => Navigator.pushNamed(context, '/game')
+                          .then((_) => setState(() {})),
+                    ),
+                    SizedBox(height: context.s(12)),
+                    GestureDetector(
+                      onTap: () {
+                        widget.storage.clearGameState();
+                        Navigator.pushNamed(context, '/game')
+                            .then((_) => setState(() {}));
+                      },
+                      child: Text(
+                        'New Game',
+                        style: GoogleFonts.fredoka(
+                          fontSize: context.sp(14),
+                          color: Colors.white.withValues(alpha: 0.5),
+                          decoration: TextDecoration.underline,
+                          decorationColor: Colors.white.withValues(alpha: 0.3),
+                        ),
+                      ),
+                    ),
+                  ] else
                   _mainBtn(
+                    context,
                     label: 'PLAY',
                     icon: Icons.play_arrow_rounded,
                     colors: const [Color(0xFFFF6EC7), Color(0xFFFF7043)],
@@ -195,17 +225,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         .then((_) => setState(() {})),
                   ),
 
-                  const SizedBox(height: 16),
+                  SizedBox(height: context.s(16)),
 
                   // ── Secondary buttons ──────────────────────
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _smallBtn(
+                          context,
                           icon: Icons.store_rounded, label: 'Store',
                           onTap: () => Navigator.pushNamed(context, '/store')),
-                      const SizedBox(width: 16),
+                      SizedBox(width: context.s(16)),
                       _smallBtn(
+                          context,
                           icon: Icons.settings_rounded, label: 'Settings',
                           onTap: () => Navigator.pushNamed(context, '/settings')),
                     ],
@@ -214,9 +246,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   const Spacer(flex: 1),
 
                   // ── Evolution chain ────────────────────────
-                  _evolutionChain(),
+                  _evolutionChain(context),
 
-                  const SizedBox(height: 20),
+                  SizedBox(height: context.s(20)),
                 ],
               ),
             ],
@@ -242,29 +274,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     )).toList();
   }
 
-  Widget _mainBtn({
+  Widget _mainBtn(
+    BuildContext context, {
     required String label, required IconData icon,
     required List<Color> colors, required VoidCallback onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 220,
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        width: context.s(220),
+        padding: EdgeInsets.symmetric(vertical: context.s(16)),
         decoration: BoxDecoration(
           gradient: LinearGradient(colors: colors,
               begin: Alignment.topLeft, end: Alignment.bottomRight),
-          borderRadius: BorderRadius.circular(32),
+          borderRadius: BorderRadius.circular(context.s(32)),
           boxShadow: [BoxShadow(
             color: colors.last.withValues(alpha: 0.5),
             blurRadius: 20, offset: const Offset(0, 8),
           )],
         ),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, color: Colors.white, size: 32),
-          const SizedBox(width: 8),
+          Icon(icon, color: Colors.white, size: context.s(32)),
+          SizedBox(width: context.s(8)),
           Text(label, style: GoogleFonts.fredoka(
-            fontSize: 24, fontWeight: FontWeight.bold,
+            fontSize: context.sp(24), fontWeight: FontWeight.bold,
             color: Colors.white, letterSpacing: 3,
           )),
         ]),
@@ -272,46 +305,54 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _smallBtn({
+  Widget _smallBtn(
+    BuildContext context, {
     required IconData icon, required String label,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 100,
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        width: context.s(100),
+        padding: EdgeInsets.symmetric(vertical: context.s(12), horizontal: context.s(16)),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(context.s(20)),
           border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
         ),
         child: Column(children: [
-          Icon(icon, color: const Color(0xFFFF7043), size: 26),
-          const SizedBox(height: 4),
+          Icon(icon, color: const Color(0xFFFF7043), size: context.s(26)),
+          SizedBox(height: context.s(4)),
           Text(label, style: GoogleFonts.fredoka(
-              fontSize: 12, color: Colors.white,
+              fontSize: context.sp(12), color: Colors.white,
               fontWeight: FontWeight.w500)),
         ]),
       ),
     );
   }
 
-  Widget _evolutionChain() {
-    const emojis = ['🍒','🍓','🍇','🍊','🍎','🍐','🍑','🍍','🍈','🍉'];
+  Widget _evolutionChain(BuildContext context) {
+    const names = [
+      'cherry','strawberry','grape','orange','apple',
+      'pear','peach','pineapple','melon','watermelon',
+    ];
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24),
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      margin: EdgeInsets.symmetric(horizontal: context.s(24)),
+      padding: EdgeInsets.symmetric(vertical: context.s(8), horizontal: context.s(12)),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(context.s(16)),
         border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: emojis.asMap().entries.map((e) => Text(
-          e.value, style: TextStyle(fontSize: 14 + e.key.toDouble() * 0.8),
-        )).toList(),
+        children: names.asMap().entries.map((e) {
+          final size = 18.0 + e.key * 1.4;
+          return Image.asset(
+            'assets/images/fruit_${e.value}.png',
+            width: size, height: size, fit: BoxFit.contain,
+          );
+        }).toList(),
       ),
     );
   }
