@@ -237,9 +237,6 @@ class FruitPhysics {
       for (int j = i + 1; j < fruits.length; j++) {
         final b = fruits[j];
         if (!b.alive || b.isPreview) continue;
-        // Skip only when BOTH are settled — an active fruit must always resolve
-        // against sleeping obstacles regardless of list order.
-        if (a.sleepCounter > 20 && b.sleepCounter > 20) continue;
 
         final ra = a.radius * a.spawnScale;
         final rb = b.radius * b.spawnScale;
@@ -261,10 +258,16 @@ class FruitPhysics {
           final pushA = rb / totalR;
           final pushB = ra / totalR;
 
+          // Position correction always runs — prevents permanent overlap between
+          // sleeping fruits that tunnelled into each other on a slow frame.
           a.x -= nx * overlap * pushA;
           a.y -= ny * overlap * pushA;
           b.x += nx * overlap * pushB;
           b.y += ny * overlap * pushB;
+
+          // Both settled: position-correct only; skip impulse to avoid
+          // destabilising an already-stable pile.
+          if (a.sleepCounter > 20 && b.sleepCounter > 20) continue;
 
           // Wake sleeping fruit when pushed significantly
           if (overlap > 1.0) {
@@ -284,7 +287,6 @@ class FruitPhysics {
             b.vy -= impulse * ny;
             a.angularVel += impulse * 0.05;
             b.angularVel -= impulse * 0.05;
-            // Always wake on velocity exchange
             a.sleepCounter = 0;
             b.sleepCounter = 0;
           }
@@ -331,7 +333,7 @@ class FruitPhysics {
         if (_mergeChecked.contains(b.id)) continue;
         if (a.type != b.type) continue;
 
-        final touch = (a.radius + b.radius) * 1.05;
+        final touch = (a.radius * a.spawnScale + b.radius * b.spawnScale) * 1.05;
 
         final dx = b.x - a.x;
         if (dx.abs() > touch) continue;

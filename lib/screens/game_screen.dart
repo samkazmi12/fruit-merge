@@ -167,6 +167,7 @@ class _GameScreenState extends State<GameScreen>
         final data = await rootBundle.load(entry.value);
         final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
         final frame = await codec.getNextFrame();
+        codec.dispose();
         if (mounted) _fruitImages[entry.key] = frame.image;
       } catch (_) {}
     }
@@ -178,6 +179,7 @@ class _GameScreenState extends State<GameScreen>
         final data = await rootBundle.load(path);
         final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
         final frame = await codec.getNextFrame();
+        codec.dispose();
         if (mounted) {
           if (path.contains('cloud')) _cloudImage = frame.image;
           if (path.contains('branch')) _branchImage = frame.image;
@@ -271,7 +273,7 @@ class _GameScreenState extends State<GameScreen>
     final droppable = FruitData.droppableFruits; // cached — no allocation
     if (lucky) {
       final currentIdx = droppable.indexWhere((f) => f.type == _nextType);
-      final luckIdx = (currentIdx + 1).clamp(0, droppable.length - 1);
+      final luckIdx = (currentIdx + 1).clamp(0, droppable.length - 2);
       return droppable[luckIdx].type;
     }
     var r = _rng.nextDouble() * _dropWeightTotal;
@@ -629,12 +631,19 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Future<void> _flushStats() async {
-    await widget.storage.addXp(_sessionXp);
+    // Snapshot before any await so a concurrent _restartGame reset can't zero
+    // out session fields while this chain is still running.
+    final xp = _sessionXp;
+    final merges = _sessionMerges;
+    final drops = _sessionDrops;
+    final bestFruit = _bestFruitIndex;
+    final highScore = _highScore;
+    await widget.storage.addXp(xp);
     await widget.storage.incrementGamesPlayed();
-    await widget.storage.addMerges(_sessionMerges);
-    await widget.storage.addDrops(_sessionDrops);
-    await widget.storage.updateBiggestFruit(_bestFruitIndex);
-    await widget.storage.setHighScore(_score);
+    await widget.storage.addMerges(merges);
+    await widget.storage.addDrops(drops);
+    await widget.storage.updateBiggestFruit(bestFruit);
+    await widget.storage.setHighScore(highScore);
   }
 
   void _restartGame() {
@@ -646,6 +655,7 @@ class _GameScreenState extends State<GameScreen>
       _aliveFruits.clear();
       _hasDead = false;
       _preview = null;
+      _isDragging = false;
       _score = 0;
       _combo = 0;
       _comboTimer = 0;
@@ -662,6 +672,7 @@ class _GameScreenState extends State<GameScreen>
       _sessionDrops = 0;
       _bestFruitIndex = 0;
       _dropCount = 0;
+      _nextType = _randomType();
     });
     _levelAtStart = LevelSystem.levelFromXp(widget.storage.totalXp);
     _spawnNext();
@@ -761,6 +772,7 @@ class _GameScreenState extends State<GameScreen>
         }
       }
     }
+    _hasDead = true;
     widget.audio.playBomb();
     setState(() => _powerUpMode = PowerUpMode.none);
   }

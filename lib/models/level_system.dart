@@ -19,9 +19,12 @@ class LevelSystem {
   /// Given total accumulated XP, return the current level
   static int levelFromXp(int totalXp) {
     int level = 1;
-    while (totalXp >= totalXpForLevel(level + 1)) {
+    int accumulated = 0;
+    while (level < 999) {
+      final needed = xpForLevel(level);
+      if (totalXp < accumulated + needed) break;
+      accumulated += needed;
       level++;
-      if (level >= 999) break;
     }
     return level;
   }

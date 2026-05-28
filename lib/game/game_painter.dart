@@ -72,8 +72,14 @@ class GamePainter extends CustomPainter {
   static final Paint _shinePaint = Paint()
     ..color = const Color(0x47FFFFFF)
     ..strokeWidth = 3.5;
-  static final Paint _particlePaint = Paint();
-  static final Paint _cloudPaint    = Paint()..filterQuality = FilterQuality.low;
+  static final Paint _particlePaint  = Paint();
+  static final Paint _cloudPaint     = Paint()..filterQuality = FilterQuality.low;
+  static final Paint _spritePaint    = Paint()..filterQuality = FilterQuality.medium;
+  static final Paint _branchPaint    = Paint()..filterQuality = FilterQuality.medium;
+  static final Paint _mergeGlowPaint = Paint();
+  // TextPainter cache for emoji fallback: keyed by "emoji:fontSize" avoids
+  // per-frame TextPainter + layout() allocations.
+  static final Map<String, TextPainter> _emojiCache = {};
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -181,7 +187,7 @@ class GamePainter extends CustomPainter {
       img,
       Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
       Rect.fromLTWH(left, top, branchW, branchH),
-      Paint()..filterQuality = FilterQuality.medium,
+      _branchPaint,
     );
   }
 
@@ -221,13 +227,10 @@ class GamePainter extends CustomPainter {
 
     // Merge glow
     if (f.mergeGlow > 0) {
-      canvas.drawCircle(
-        center,
-        r * 1.25,
-        Paint()
-          ..color = Colors.white.withValues(alpha: f.mergeGlow * 0.5)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.4),
-      );
+      _mergeGlowPaint
+        ..color = Colors.white.withValues(alpha: f.mergeGlow * 0.5)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.4);
+      canvas.drawCircle(center, r * 1.25, _mergeGlowPaint);
     }
 
     // Preview drop indicator — subtle dashed ring only
@@ -319,19 +322,17 @@ class GamePainter extends CustomPainter {
       img,
       Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
       Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 2),
-      Paint()..filterQuality = FilterQuality.medium,
+      _spritePaint,
     );
     canvas.restore();
   }
 
   void _drawEmoji(Canvas canvas, Offset center, double r, String emoji) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: emoji,
-        style: TextStyle(fontSize: r * 1.25, height: 1.0),
-      ),
+    final key = '$emoji:${(r * 1.25).round()}';
+    final tp = _emojiCache.putIfAbsent(key, () => TextPainter(
+      text: TextSpan(text: emoji, style: TextStyle(fontSize: r * 1.25, height: 1.0)),
       textDirection: TextDirection.ltr,
-    )..layout();
+    )..layout());
     tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
   }
 
