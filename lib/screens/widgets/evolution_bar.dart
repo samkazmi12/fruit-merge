@@ -10,6 +10,9 @@ class EvolutionBar extends StatelessWidget {
 
   const EvolutionBar({super.key, required this.bestFruitIndex});
 
+  String _assetPathFor(FruitData fruit) =>
+      'assets/images/fruit_${fruit.name.toLowerCase()}.png';
+
   @override
   Widget build(BuildContext context) {
     final all = FruitData.allFruits;
@@ -51,10 +54,18 @@ class EvolutionBar extends StatelessWidget {
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 400),
               opacity: unlocked ? 1.0 : (isNext ? 0.55 : 0.22),
-              child: Text(
-                e.value.emoji,
-                style: TextStyle(
-                  fontSize: context.sp(unlocked ? 18 : (isNext ? 15 : 12)),
+              child: SizedBox(
+                width: context.s(unlocked ? 24 : (isNext ? 20 : 16)),
+                height: context.s(unlocked ? 24 : (isNext ? 20 : 16)),
+                child: Image.asset(
+                  _assetPathFor(e.value),
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.24),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
                 ),
               ),
             ),
