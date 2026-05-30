@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import '../game/fruit_image_loader.dart';
 import '../game/fruit_physics.dart';
 import '../game/game_painter.dart';
 import '../game/power_up_mode.dart';
@@ -153,43 +154,12 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Future<void> _loadFruitImages() async {
-    const sprites = {
-      FruitType.cherry: 'assets/images/fruit_cherry.png',
-      FruitType.strawberry: 'assets/images/fruit_strawberry.png',
-      FruitType.grape: 'assets/images/fruit_grape.png',
-      FruitType.orange: 'assets/images/fruit_orange.png',
-      FruitType.apple: 'assets/images/fruit_apple.png',
-      FruitType.pear: 'assets/images/fruit_pear.png',
-      FruitType.peach: 'assets/images/fruit_peach.png',
-      FruitType.pineapple: 'assets/images/fruit_pineapple.png',
-      FruitType.melon: 'assets/images/fruit_melon.png',
-      FruitType.watermelon: 'assets/images/fruit_watermelon.png',
-    };
-    for (final entry in sprites.entries) {
-      try {
-        final data = await rootBundle.load(entry.value);
-        final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
-        final frame = await codec.getNextFrame();
-        codec.dispose();
-        if (mounted) _fruitImages[entry.key] = frame.image;
-      } catch (_) {}
-    }
-    for (final path in const [
-      'assets/images/asset_cloud.png',
-      'assets/images/asset_branch.png',
-    ]) {
-      try {
-        final data = await rootBundle.load(path);
-        final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
-        final frame = await codec.getNextFrame();
-        codec.dispose();
-        if (mounted) {
-          if (path.contains('cloud')) _cloudImage = frame.image;
-          if (path.contains('branch')) _branchImage = frame.image;
-        }
-      } catch (_) {}
-    }
-    if (mounted) setState(() {});
+    final result = await loadGameImages();
+    if (!mounted) return;
+    _fruitImages.addAll(result.fruitImages);
+    _cloudImage = result.cloudImage;
+    _branchImage = result.branchImage;
+    setState(() {});
   }
 
   @override
