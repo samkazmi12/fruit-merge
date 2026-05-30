@@ -180,6 +180,8 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   void dispose() {
+    _flushStats();
+    _saveGameState();
     WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
     _tickNotifier.dispose();
@@ -911,6 +913,7 @@ class _GameScreenState extends State<GameScreen>
                               onPause: () {
                                 widget.audio
                                     .stopBackgroundMusic(); // pauses, keeps position
+                                _saveGameState();
                                 setState(() => _isPaused = true);
                               },
                             ),
@@ -943,7 +946,11 @@ class _GameScreenState extends State<GameScreen>
                               setState(() => _isPaused = false);
                               _restartGame();
                             },
-                            onHome: () => Navigator.pop(context),
+                            onHome: () {
+                              _flushStats();
+                              _saveGameState();
+                              Navigator.pop(context);
+                            },
                             onToggleSound: () {
                               widget.audio.toggleSound();
                               setState(() {});
