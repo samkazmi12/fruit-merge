@@ -827,7 +827,7 @@ class _GameScreenState extends State<GameScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        color: const Color(0xFFDDE5B6),
+        color: const Color(0xFF8ECAE6),
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
