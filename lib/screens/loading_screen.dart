@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../game/fruit_image_loader.dart';
 
 class LoadingScreen extends StatefulWidget {
   final String nextRoute;
@@ -19,6 +20,9 @@ class _LoadingScreenState extends State<LoadingScreen>
   @override
   void initState() {
     super.initState();
+    // Pre-warm the fruit-image cache during the loading animation so that
+    // GameScreen always has sprites ready the moment the user presses Play.
+    loadGameImages();
     _progressController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4500),
@@ -81,14 +85,14 @@ class _LoadingScreenState extends State<LoadingScreen>
                   const SizedBox(height: 22),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      _FruitChip(assetPath: 'assets/images/fruit_cherry.png'),
-                      SizedBox(width: 8),
-                      _FruitChip(assetPath: 'assets/images/fruit_strawberry.png'),
-                      SizedBox(width: 8),
-                      _FruitChip(assetPath: 'assets/images/fruit_orange.png'),
-                      SizedBox(width: 8),
-                      _FruitChip(assetPath: 'assets/images/fruit_watermelon.png'),
+                    children: [
+                      const _FruitChip(assetPath: 'assets/images/fruit_cherry.png'),
+                      const SizedBox(width: 8),
+                      const _FruitChip(assetPath: 'assets/images/fruit_strawberry.png'),
+                      const SizedBox(width: 8),
+                      const _FruitChip(assetPath: 'assets/images/fruit_orange.png'),
+                      const SizedBox(width: 8),
+                      const _FruitChip(assetPath: 'assets/images/fruit_watermelon.png'),
                     ],
                   ),
                   const SizedBox(height: 22),

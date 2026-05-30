@@ -314,12 +314,13 @@ class FruitPhysics {
     }
   }
 
-  // Reused Set to avoid per-tick allocation in detectMerges
+  // Reused Set and List to avoid per-tick allocations in detectMerges
   final _mergeChecked = <int>{};
+  final _mergesBuffer = <(FruitParticle, FruitParticle)>[];
 
   List<(FruitParticle, FruitParticle)> detectMerges(
       List<FruitParticle> fruits) {
-    final merges = <(FruitParticle, FruitParticle)>[];
+    _mergesBuffer.clear();
     _mergeChecked.clear();
 
     for (int i = 0; i < fruits.length; i++) {
@@ -343,14 +344,14 @@ class FruitPhysics {
         final dist = sqrt(dx * dx + dy * dy);
 
         if (dist <= touch) {
-          merges.add((a, b));
+          _mergesBuffer.add((a, b));
           _mergeChecked.add(a.id);
           _mergeChecked.add(b.id);
           break;
         }
       }
     }
-    return merges;
+    return _mergesBuffer;
   }
 
   /// Create burst particles at merge position — uses instance _rng (no allocation)

@@ -77,6 +77,20 @@ class GamePainter extends CustomPainter {
   static final Paint _spritePaint    = Paint()..filterQuality = FilterQuality.medium;
   static final Paint _branchPaint    = Paint()..filterQuality = FilterQuality.medium;
   static final Paint _mergeGlowPaint = Paint();
+  // Drop-guide dashed line (constant appearance — allocated once).
+  static final Paint _dropGuidePaint = Paint()
+    ..color = const Color(0x47999999) // grey at 0.28 opacity
+    ..strokeWidth = 1.5;
+  // Blink-eye arcs (colour/width vary per fruit, but the Paint itself is reused).
+  static final Paint _blinkPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round;
+  // Cloud colour constant: white at 0.62 opacity (avoids withValues() each frame).
+  static const Color _cloudColor = Color(0x9EFFFFFF);
+  // Shadow shader cache: createShader is a native call; the rect is constant
+  // after _initBox so we cache the shader and only rebuild on rect change.
+  static Rect? _lastShadowRect;
+  static Shader? _cachedShadowShader;
   // TextPainter cache for emoji fallback: keyed by "emoji:fontSize" avoids
   // per-frame TextPainter + layout() allocations.
   static final Map<String, TextPainter> _emojiCache = {};
@@ -102,13 +116,18 @@ class GamePainter extends CustomPainter {
       _bgPaint,
     );
 
-    // Inner shadow at top (const gradient avoids allocation; only createShader allocates)
+    // Inner shadow at top — shader is cached because the rect never changes after
+    // the box is initialised (createShader is an expensive native call at 60 fps).
     final shadowRect = Rect.fromLTWH(boxLeft, boxTop, w, 28);
-    _innerShadowPaint.shader = const LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [Color(0x14000000), Colors.transparent],
-    ).createShader(shadowRect);
+    if (shadowRect != _lastShadowRect) {
+      _lastShadowRect = shadowRect;
+      _cachedShadowShader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Color(0x14000000), Colors.transparent],
+      ).createShader(shadowRect);
+    }
+    _innerShadowPaint.shader = _cachedShadowShader;
     canvas.drawRect(shadowRect, _innerShadowPaint);
 
     // Centre divider line
@@ -161,7 +180,7 @@ class GamePainter extends CustomPainter {
     final src = Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
     for (final c in clouds) {
       final h = c.width * img.height / img.width;
-      _cloudPaint.color = Colors.white.withValues(alpha: 0.62);
+      _cloudPaint.color = _cloudColor;
       canvas.drawImageRect(
         img,
         src,
@@ -286,11 +305,10 @@ class GamePainter extends CustomPainter {
     final arcW = ed.$3 * r;
     final arcH = arcW * 0.48;
 
-    final paint = Paint()
-      ..color = const Color(0xFF2D1A00).withValues(alpha: alpha * 0.85)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = (r * 0.075).clamp(1.5, 5.0)
-      ..strokeCap = StrokeCap.round;
+    _blinkPaint
+      ..color = Color.fromARGB(
+          (alpha * 0.85 * 255).round(), 0x2D, 0x1A, 0x00)
+      ..strokeWidth = (r * 0.075).clamp(1.5, 5.0);
 
     canvas.save();
     canvas.translate(f.x, f.y);
@@ -307,7 +325,7 @@ class GamePainter extends CustomPainter {
         0,
         -pi,
         false,
-        paint,
+        _blinkPaint,
       );
     }
 
@@ -337,14 +355,11 @@ class GamePainter extends CustomPainter {
   }
 
   void _drawDropGuide(Canvas canvas, FruitParticle f) {
-    final linePaint = Paint()
-      ..color = Colors.grey.withValues(alpha: 0.28)
-      ..strokeWidth = 1.5;
     const dashH = 9.0, gapH = 5.0;
     var y = f.y + f.radius + 2;
     while (y < boxBottom - 4) {
       final yEnd = (y + dashH).clamp(f.y + f.radius, boxBottom - 4);
-      canvas.drawLine(Offset(f.x, y), Offset(f.x, yEnd), linePaint);
+      canvas.drawLine(Offset(f.x, y), Offset(f.x, yEnd), _dropGuidePaint);
       y += dashH + gapH;
     }
   }
