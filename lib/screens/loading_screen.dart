@@ -100,7 +100,7 @@ class _LoadingScreenState extends State<LoadingScreen>
                       borderRadius: BorderRadius.circular(999),
                       child: AnimatedBuilder(
                         animation: _progressController,
-                        builder: (_, __) {
+                        builder: (_, _) {
                           final progress = _progressController.value.clamp(0.0, 1.0);
                           return Align(
                             alignment: Alignment.centerLeft,
@@ -126,7 +126,7 @@ class _LoadingScreenState extends State<LoadingScreen>
                   const SizedBox(height: 12),
                   AnimatedBuilder(
                     animation: _progressController,
-                    builder: (_, __) {
+                    builder: (_, _) {
                       final percent = (_progressController.value * 100).clamp(0, 100).round();
                       return Text(
                         '$percent%',
