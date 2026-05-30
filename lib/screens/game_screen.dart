@@ -122,6 +122,11 @@ class _GameScreenState extends State<GameScreen>
   // ── Session stats ───────────────────────────────────────────────
   int _sessionMerges = 0;
   int _sessionDrops = 0;
+  int _flushedXp = 0;
+  int _flushedMerges = 0;
+  int _flushedDrops = 0;
+  int _flushedBestFruit = 0;
+  bool _gamePlayedFlushed = false;
 
   final Random _rng = Random();
 
@@ -165,8 +170,8 @@ class _GameScreenState extends State<GameScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      _saveGameState();
       _flushStats();
+      _saveGameState();
       if (!_isGameOver && !_isPaused) {
         setState(() => _isPaused = true);
       }
@@ -302,6 +307,11 @@ class _GameScreenState extends State<GameScreen>
       _sessionMerges = state['sessionMerges'] as int;
       _sessionDrops = state['sessionDrops'] as int;
       _bestFruitIndex = state['bestFruitIndex'] as int;
+      _flushedXp = (state['flushedXp'] as int?) ?? 0;
+      _flushedMerges = (state['flushedMerges'] as int?) ?? 0;
+      _flushedDrops = (state['flushedDrops'] as int?) ?? 0;
+      _flushedBestFruit = (state['flushedBestFruit'] as int?) ?? 0;
+      _gamePlayedFlushed = (state['gamePlayedFlushed'] as bool?) ?? false;
       _nextId = state['nextId'] as int;
       for (final j in state['fruits'] as List<dynamic>) {
         _fruits.add(FruitParticle.fromJson(j as Map<String, dynamic>));
@@ -352,6 +362,11 @@ class _GameScreenState extends State<GameScreen>
       'sessionMerges': _sessionMerges,
       'sessionDrops': _sessionDrops,
       'bestFruitIndex': _bestFruitIndex,
+      'flushedXp': _flushedXp,
+      'flushedMerges': _flushedMerges,
+      'flushedDrops': _flushedDrops,
+      'flushedBestFruit': _flushedBestFruit,
+      'gamePlayedFlushed': _gamePlayedFlushed,
       'nextId': _nextId,
     });
   }
@@ -552,7 +567,7 @@ class _GameScreenState extends State<GameScreen>
     }
     if (widget.storage.vibrationEnabled) HapticFeedback.heavyImpact();
     widget.storage.clearGameState();
-    _flushStats();
+    _flushStats(countGamePlayed: true);
     widget.audio.playWin();
     setState(() {});
   }
@@ -598,23 +613,30 @@ class _GameScreenState extends State<GameScreen>
     final newCoins = _score ~/ 50;
     widget.storage.addCoins(newCoins);
     widget.storage.clearGameState();
-    _flushStats();
+    _flushStats(countGamePlayed: true);
     widget.audio.playGameOver();
   }
 
-  Future<void> _flushStats() async {
-    // Snapshot before any await so a concurrent _restartGame reset can't zero
-    // out session fields while this chain is still running.
-    final xp = _sessionXp;
-    final merges = _sessionMerges;
-    final drops = _sessionDrops;
+  Future<void> _flushStats({bool countGamePlayed = false}) async {
+    final xp = max(0, _sessionXp - _flushedXp);
+    final merges = max(0, _sessionMerges - _flushedMerges);
+    final drops = max(0, _sessionDrops - _flushedDrops);
+    final hasBestFruitUpdate = _bestFruitIndex > _flushedBestFruit;
     final bestFruit = _bestFruitIndex;
+    final shouldCountGame = countGamePlayed && !_gamePlayedFlushed;
     final highScore = _highScore;
-    await widget.storage.addXp(xp);
-    await widget.storage.incrementGamesPlayed();
-    await widget.storage.addMerges(merges);
-    await widget.storage.addDrops(drops);
-    await widget.storage.updateBiggestFruit(bestFruit);
+
+    _flushedXp += xp;
+    _flushedMerges += merges;
+    _flushedDrops += drops;
+    if (hasBestFruitUpdate) _flushedBestFruit = bestFruit;
+    if (shouldCountGame) _gamePlayedFlushed = true;
+
+    if (xp > 0) await widget.storage.addXp(xp);
+    if (shouldCountGame) await widget.storage.incrementGamesPlayed();
+    if (merges > 0) await widget.storage.addMerges(merges);
+    if (drops > 0) await widget.storage.addDrops(drops);
+    if (hasBestFruitUpdate) await widget.storage.updateBiggestFruit(bestFruit);
     await widget.storage.setHighScore(highScore);
   }
 
@@ -643,6 +665,11 @@ class _GameScreenState extends State<GameScreen>
       _sessionMerges = 0;
       _sessionDrops = 0;
       _bestFruitIndex = 0;
+      _flushedXp = 0;
+      _flushedMerges = 0;
+      _flushedDrops = 0;
+      _flushedBestFruit = 0;
+      _gamePlayedFlushed = false;
       _dropCount = 0;
       _nextType = _randomType();
     });
@@ -917,6 +944,14 @@ class _GameScreenState extends State<GameScreen>
                               _restartGame();
                             },
                             onHome: () => Navigator.pop(context),
+                            onToggleSound: () {
+                              widget.audio.toggleSound();
+                              setState(() {});
+                            },
+                            onToggleMusic: () {
+                              widget.audio.toggleMusic();
+                              setState(() {});
+                            },
                           ),
 
                         if (_isGameOver)

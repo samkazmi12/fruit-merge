@@ -8,6 +8,8 @@ class PauseOverlay extends StatelessWidget {
   final VoidCallback onResume;
   final VoidCallback onRestart;
   final VoidCallback onHome;
+  final VoidCallback onToggleSound;
+  final VoidCallback onToggleMusic;
 
   const PauseOverlay({
     super.key,
@@ -15,6 +17,8 @@ class PauseOverlay extends StatelessWidget {
     required this.onResume,
     required this.onRestart,
     required this.onHome,
+    required this.onToggleSound,
+    required this.onToggleMusic,
   });
 
   @override
@@ -72,7 +76,7 @@ class PauseOverlay extends StatelessWidget {
                         ? Icons.volume_up_rounded : Icons.volume_off_rounded,
                     isActive: audio.soundEnabled,
                     label: 'SFX',
-                    onTap: () => audio.toggleSound(),
+                    onTap: onToggleSound,
                   ),
                   SizedBox(width: context.s(20)),
                   _toggle(context,
@@ -80,7 +84,7 @@ class PauseOverlay extends StatelessWidget {
                         ? Icons.music_note_rounded : Icons.music_off_rounded,
                     isActive: audio.musicEnabled,
                     label: 'Music',
-                    onTap: () => audio.toggleMusic(),
+                    onTap: onToggleMusic,
                   ),
                 ],
               ),
