@@ -4,22 +4,25 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../game/fruit_physics.dart';
 import '../game/game_painter.dart';
+import '../game/power_up_mode.dart';
 import '../models/fruit_data.dart';
 import '../models/level_system.dart';
 import '../services/audio_manager.dart';
 import '../services/storage_service.dart';
 import '../utils/constants.dart';
-import '../utils/responsive.dart';
 import 'overlays/game_over_overlay.dart';
 import 'overlays/hud_overlay.dart';
 import 'overlays/pause_overlay.dart';
 import 'overlays/watermelon_win_overlay.dart';
-
-enum PowerUpMode { none, bomb, sniper, shaker }
+import 'widgets/ad_banner.dart';
+import 'widgets/combo_banner.dart';
+import 'widgets/evolution_bar.dart';
+import 'widgets/game_canvas_stage.dart';
+import 'widgets/power_up_cards.dart';
+import 'widgets/score_popups_layer.dart';
 
 class GameScreen extends StatefulWidget {
   final StorageService storage;
@@ -845,57 +848,29 @@ class _GameScreenState extends State<GameScreen>
                     return Stack(
                       children: [
                         // ── Canvas ─────────────────────────────────
-                        Positioned.fill(
-                          child: _boxReady
-                              ? RepaintBoundary(
-                                  child: CustomPaint(
-                                    painter: GamePainter(
-                                      fruits: _aliveFruits,
-                                      particles: _particles,
-                                      boxLeft: _boxLeft,
-                                      boxRight: _boxRight,
-                                      boxTop: _boxTop,
-                                      boxBottom: _boxBottom,
-                                      gameOverLineY: _gameOverLineY,
-                                      dangerLevel: _dangerLevel,
-                                      fruitImages: _fruitImages,
-                                      clouds: _clouds,
-                                      cloudImage: _cloudImage,
-                                      branchImage: _branchImage,
-                                      dropX: _dropX,
-                                      dropY: _dropY,
-                                      dropFruitRadius: _preview?.radius ?? 20,
-                                      showDropper:
-                                          _boxReady &&
-                                          !_isGameOver &&
-                                          !_isPaused,
-                                    ),
-                                    size: size,
-                                  ),
-                                )
-                              : const SizedBox(),
+                        GameCanvasStage(
+                          fruits: _aliveFruits,
+                          particles: _particles,
+                          boxLeft: _boxLeft,
+                          boxRight: _boxRight,
+                          boxTop: _boxTop,
+                          boxBottom: _boxBottom,
+                          gameOverLineY: _gameOverLineY,
+                          dangerLevel: _dangerLevel,
+                          fruitImages: _fruitImages,
+                          clouds: _clouds,
+                          cloudImage: _cloudImage,
+                          branchImage: _branchImage,
+                          dropX: _dropX,
+                          dropY: _dropY,
+                          dropFruitRadius: _preview?.radius ?? 20,
+                          showDropper: _boxReady && !_isGameOver && !_isPaused,
+                          size: size,
+                          boxReady: _boxReady,
                         ),
 
                         // ── Ad banner placeholder ─────────────────────
-                        Positioned(
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          height: _adH,
-                          child: Container(
-                            color: Colors.black.withValues(alpha: 0.55),
-                            child: Center(
-                              child: Text(
-                                'AD',
-                                style: GoogleFonts.fredoka(
-                                  color: Colors.white.withValues(alpha: 0.25),
-                                  fontSize: 13,
-                                  letterSpacing: 2,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                        AdBanner(height: _adH),
 
                         // ── Evolution progress strip ──────────────────
                         Positioned(
@@ -903,94 +878,25 @@ class _GameScreenState extends State<GameScreen>
                           left: 0,
                           right: 0,
                           height: _cardsH,
-                          child: RepaintBoundary(child: _evolutionBar(context)),
+                          child: RepaintBoundary(
+                            child: EvolutionBar(
+                              bestFruitIndex: _bestFruitIndex,
+                            ),
+                          ),
                         ),
 
                         // ── Combo banner ────────────────────────────
                         if (_comboBannerOpacity > 0 && _combo >= 2)
-                          Positioned(
-                            top: _boxTop + 22,
-                            left: 0,
-                            right: 0,
-                            child: IgnorePointer(
-                              child: Center(
-                                child: Transform.scale(
-                                  scale: _comboBannerScale,
-                                  child: Opacity(
-                                    opacity: _comboBannerOpacity,
-                                    child: Container(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: context.s(22),
-                                        vertical: context.s(8),
-                                      ),
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            _comboColor,
-                                            _comboColor.withValues(alpha: 0.7),
-                                          ],
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          context.s(30),
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: _comboColor.withValues(
-                                              alpha: 0.6,
-                                            ),
-                                            blurRadius: 20,
-                                            spreadRadius: 2,
-                                          ),
-                                        ],
-                                      ),
-                                      child: Text(
-                                        '${_lastShownCombo}x COMBO! 🔥',
-                                        style: GoogleFonts.fredoka(
-                                          fontSize: context.sp(26),
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                          letterSpacing: 1.2,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
+                          ComboBanner(
+                            opacity: _comboBannerOpacity,
+                            scale: _comboBannerScale,
+                            lastShownCombo: _lastShownCombo,
+                            comboColor: _comboColor,
+                            boxTop: _boxTop,
                           ),
 
-                        // ── Native Overlay Score Popups ─────────────────
-                        ..._popups.map(
-                          (p) => Positioned(
-                            left: p.x - 40, // rough centering
-                            top: p.y - 20,
-                            child: IgnorePointer(
-                              child: Opacity(
-                                opacity: p.life.clamp(0.0, 1.0),
-                                child: Transform.scale(
-                                  scale: 0.6 + p.life.clamp(0.0, 1.0) * 0.4,
-                                  child: Text(
-                                    p.text,
-                                    style: TextStyle(
-                                      fontSize: context.sp(22),
-                                      fontWeight: FontWeight.w900,
-                                      color: p.color,
-                                      shadows: [
-                                        Shadow(
-                                          color: Colors.black.withValues(
-                                            alpha: p.life.clamp(0.0, 1.0) * 0.4,
-                                          ),
-                                          offset: const Offset(1, 1),
-                                          blurRadius: 3,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                        // ── Score popups overlay ────────────────────
+                        ScorePopupsLayer(popups: _popups),
 
                         // ── HUD (RepaintBoundary so score doesn't ──
                         // trigger canvas repaint)
@@ -1022,7 +928,12 @@ class _GameScreenState extends State<GameScreen>
                             left: 0,
                             right: 0,
                             height: _cardsH,
-                            child: _powerUpCards(context),
+                            child: PowerUpCards(
+                              storage: widget.storage,
+                              powerUpMode: _powerUpMode,
+                              onModeChanged: (mode) =>
+                                  setState(() => _powerUpMode = mode),
+                            ),
                           ),
 
                         if (_isPaused)
@@ -1066,220 +977,6 @@ class _GameScreenState extends State<GameScreen>
             },
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _evolutionBar(BuildContext context) {
-    final all = FruitData.allFruits;
-    return Container(
-      margin: EdgeInsets.fromLTRB(
-        context.s(14),
-        context.s(10),
-        context.s(14),
-        context.s(10),
-      ),
-      padding: EdgeInsets.symmetric(
-        horizontal: context.s(10),
-        vertical: context.s(7),
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(context.s(24)),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: all.asMap().entries.map((e) {
-          final unlocked = e.key <= _bestFruitIndex;
-          // Highlight the very next fruit to unlock
-          final isNext = e.key == _bestFruitIndex + 1;
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 400),
-            padding: isNext ? EdgeInsets.all(context.s(3)) : EdgeInsets.zero,
-            decoration: isNext
-                ? BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.12),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.3),
-                      width: 1,
-                    ),
-                  )
-                : const BoxDecoration(),
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 400),
-              opacity: unlocked ? 1.0 : (isNext ? 0.55 : 0.22),
-              child: Text(
-                e.value.emoji,
-                style: TextStyle(
-                  fontSize: context.sp(unlocked ? 18 : (isNext ? 15 : 12)),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _powerUpCards(BuildContext context) {
-    const bombColor = Color(0xFFFF5722);
-    const shakerColor = Color(0xFF9C27B0);
-    const sniperColor = Color(0xFF00BCD4);
-
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // ── Background strip ──────────────────────────────────
-        Positioned.fill(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  const Color(0xFF180430).withValues(alpha: 0.3),
-                  const Color(0xFF180430).withValues(alpha: 0.85),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        // ── Three power-up cards ──────────────────────────────
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _powerUpCard(
-              context: context,
-              icon: '💣',
-              label: 'Bomb',
-              count: widget.storage.bombCount,
-              isActive: _powerUpMode == PowerUpMode.bomb,
-              activeColor: bombColor,
-              onTap: () => setState(
-                () => _powerUpMode = (_powerUpMode == PowerUpMode.bomb)
-                    ? PowerUpMode.none
-                    : PowerUpMode.bomb,
-              ),
-            ),
-            SizedBox(width: context.s(20)),
-            _powerUpCard(
-              context: context,
-              icon: '🪇',
-              label: 'Shaker',
-              count: widget.storage.shakerCount,
-              isActive: _powerUpMode == PowerUpMode.shaker,
-              activeColor: shakerColor,
-              onTap: () => setState(
-                () => _powerUpMode = (_powerUpMode == PowerUpMode.shaker)
-                    ? PowerUpMode.none
-                    : PowerUpMode.shaker,
-              ),
-            ),
-            SizedBox(width: context.s(20)),
-            _powerUpCard(
-              context: context,
-              icon: '🎯',
-              label: 'Sniper',
-              count: widget.storage.sniperCount,
-              isActive: _powerUpMode == PowerUpMode.sniper,
-              activeColor: sniperColor,
-              onTap: () => setState(
-                () => _powerUpMode = (_powerUpMode == PowerUpMode.sniper)
-                    ? PowerUpMode.none
-                    : PowerUpMode.sniper,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _powerUpCard({
-    required BuildContext context,
-    required String icon,
-    required String label,
-    required int count,
-    required bool isActive,
-    required Color activeColor,
-    required VoidCallback onTap,
-  }) {
-    final outOfStock = count <= 0;
-    return GestureDetector(
-      onTap: outOfStock ? null : onTap,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Card body
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOutCubic,
-            width: context.s(54),
-            height: context.s(54),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? activeColor.withValues(alpha: 0.18)
-                  : Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(context.s(16)),
-              border: Border.all(
-                color: isActive
-                    ? activeColor
-                    : Colors.white.withValues(alpha: 0.18),
-                width: isActive ? 2.0 : 1.0,
-              ),
-              boxShadow: isActive
-                  ? [
-                      BoxShadow(
-                        color: activeColor.withValues(alpha: 0.45),
-                        blurRadius: 16,
-                        spreadRadius: 2,
-                      ),
-                    ]
-                  : const [],
-            ),
-            child: Center(
-              child: Opacity(
-                opacity: outOfStock ? 0.25 : 1.0,
-                child: Text(icon, style: TextStyle(fontSize: context.sp(26))),
-              ),
-            ),
-          ),
-
-          // Count badge (top-right corner)
-          Positioned(
-            top: -context.s(5),
-            right: -context.s(5),
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.s(5),
-                vertical: context.s(1),
-              ),
-              decoration: BoxDecoration(
-                color: outOfStock
-                    ? Colors.grey.shade800
-                    : (isActive ? activeColor : const Color(0xFF2D1A4A)),
-                borderRadius: BorderRadius.circular(context.s(10)),
-                border: Border.all(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  width: 1,
-                ),
-              ),
-              child: Text(
-                '×$count',
-                style: GoogleFonts.fredoka(
-                  color: outOfStock ? Colors.white30 : Colors.white,
-                  fontSize: context.sp(9),
-                  fontWeight: FontWeight.bold,
-                  height: 1.0,
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
