@@ -4,6 +4,7 @@ import 'services/storage_service.dart';
 import 'services/audio_manager.dart';
 import 'screens/home_screen.dart';
 import 'screens/game_screen.dart';
+import 'screens/loading_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/store_screen.dart';
 import 'screens/profile_screen.dart';
@@ -58,14 +59,19 @@ class FruitMergeApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      initialRoute: '/',
+      initialRoute: '/loading',
       onGenerateRoute: (settings) {
         switch (settings.name) {
+          case '/loading':
+            return MaterialPageRoute(
+              builder: (_) => const LoadingScreen(nextRoute: '/'),
+            );
           case '/':
             return MaterialPageRoute(
               builder: (_) => HomeScreen(storage: storage),
             );
           case '/game':
+          case '/gameplay':
             return MaterialPageRoute(
               builder: (_) => GameScreen(
                 storage: storage,
