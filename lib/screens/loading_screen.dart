@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
 class LoadingScreen extends StatefulWidget {
-  const LoadingScreen({super.key});
+  final String nextRoute;
+
+  const LoadingScreen({
+    super.key,
+    this.nextRoute = '/',
+  });
 
   @override
   State<LoadingScreen> createState() => _LoadingScreenState();
@@ -19,7 +24,7 @@ class _LoadingScreenState extends State<LoadingScreen>
       duration: const Duration(milliseconds: 4500),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed && mounted) {
-          Navigator.of(context).pushReplacementNamed('/gameplay');
+          Navigator.of(context).pushReplacementNamed(widget.nextRoute);
         }
       });
     _progressController.forward();
