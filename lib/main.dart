@@ -71,12 +71,6 @@ class FruitMergeApp extends StatelessWidget {
               builder: (_) => HomeScreen(storage: storage),
             );
           case '/game':
-            return MaterialPageRoute(
-              builder: (_) => GameScreen(
-                storage: storage,
-                audio: audio,
-              ),
-            );
           case '/gameplay':
             return MaterialPageRoute(
               builder: (_) => GameScreen(
