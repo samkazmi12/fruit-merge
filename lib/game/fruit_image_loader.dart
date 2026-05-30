@@ -4,13 +4,28 @@ import 'package:flutter/services.dart';
 
 import '../models/fruit_data.dart';
 
+/// Top-level cache that holds the decoded fruit images for the entire app session.
+///
+/// Populated on the first call to [loadGameImages] (fired by [LoadingScreen]
+/// during its startup animation) and returned as-is on every subsequent call.
+/// This ensures [GameScreen] always finds the cache warm before it starts
+/// rendering, so fruits are drawn with sprites rather than emoji placeholders.
+({Map<FruitType, ui.Image> fruitImages, ui.Image? cloudImage, ui.Image? branchImage})?
+    _imageCache;
+
 /// Loads all fruit sprites and scene-decoration images from the asset bundle.
 ///
-/// Returns a record with the fruit-image map and the two scene images.
+/// Results are cached after the first call — subsequent calls return immediately
+/// with the same [ui.Image] objects without any I/O.  The loading screen fires
+/// this during its 4.5 s animation so that [GameScreen] always finds the cache
+/// warm by the time the user presses Play.
+///
 /// Any individual asset that fails to load is silently skipped so the game
 /// degrades gracefully when an asset is missing.
 Future<({Map<FruitType, ui.Image> fruitImages, ui.Image? cloudImage, ui.Image? branchImage})>
     loadGameImages() async {
+  if (_imageCache != null) return _imageCache!;
+
   const sprites = {
     FruitType.cherry: 'assets/images/fruit_cherry.png',
     FruitType.strawberry: 'assets/images/fruit_strawberry.png',
@@ -33,11 +48,12 @@ Future<({Map<FruitType, ui.Image> fruitImages, ui.Image? cloudImage, ui.Image? b
   final cloudImage = await _loadImage('assets/images/asset_cloud.png');
   final branchImage = await _loadImage('assets/images/asset_branch.png');
 
-  return (
+  _imageCache = (
     fruitImages: fruitImages,
     cloudImage: cloudImage,
     branchImage: branchImage,
   );
+  return _imageCache!;
 }
 
 Future<ui.Image?> _loadImage(String assetPath) async {
