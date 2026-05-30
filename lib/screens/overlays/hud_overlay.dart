@@ -181,7 +181,7 @@ class HudOverlay extends StatelessWidget {
                       width: context.s(36),
                       height: context.s(36),
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Text(nextData.emoji,
+                      errorBuilder: (_, _, _) => Text(nextData.emoji,
                           style:
                               TextStyle(fontSize: context.sp(22))),
                     ),
@@ -248,7 +248,7 @@ class HudOverlay extends StatelessWidget {
                       width: context.s(20),
                       height: context.s(20),
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Text(bestData.emoji,
+                      errorBuilder: (_, _, _) => Text(bestData.emoji,
                           style:
                               TextStyle(fontSize: context.sp(13))),
                     ),
