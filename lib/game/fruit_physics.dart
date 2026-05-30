@@ -40,6 +40,9 @@ class FruitParticle {
     double? nextBlinkIn,
   }) : nextBlinkIn = nextBlinkIn ?? (1.5 + (id * 0.618033988749895) % 4.5);
 
+  // Physics sleep: counts frames of low-velocity rest (> 20 → sleeping)
+  int sleepCounter = 0;
+
   bool get isBlinking => blinkTimer > 0 && !isPreview;
 
   FruitData get data => FruitData.fromType(type);
@@ -141,30 +144,39 @@ class FruitPhysics {
     for (final f in fruits) {
       if (!f.alive || f.isPreview) continue;
 
-      // Gravity
-      f.vy += gravity * dt;
+      // ── Sleeping path: fruit is settled; skip expensive physics ──
+      if (f.sleepCounter > 20) {
+        // Only update blink so eyes still animate while resting
+        if (f.blinkTimer > 0) {
+          f.blinkTimer -= dt;
+          if (f.blinkTimer < 0) f.blinkTimer = 0;
+        } else {
+          f.nextBlinkIn -= dt;
+          if (f.nextBlinkIn <= 0) {
+            f.blinkTimer = 0.12 + _rng.nextDouble() * 0.06;
+            f.nextBlinkIn = 3.0 + _rng.nextDouble() * 5.0;
+          }
+        }
+        continue;
+      }
 
-      // Integrate position
+      // ── Active path: full physics ─────────────────────────────
+      f.vy += gravity * dt;
       f.x += f.vx * dt;
       f.y += f.vy * dt;
 
-      // ── Rotation: tilt from impacts only, decays to rest ─────
       f.angularVel *= 0.94;
       if (f.angularVel.abs() < 0.005) f.angularVel = 0;
       f.angle += f.angularVel * dt;
-      f.angle = f.angle.clamp(-0.26, 0.26); // max ±15 degrees
+      f.angle = f.angle.clamp(-0.26, 0.26);
 
-      // Spawn scale animation
       if (f.spawnScale < 1.0) {
         f.spawnScale = (f.spawnScale + dt * 6.0).clamp(0.0, 1.0);
       }
-
-      // Merge glow fade
       if (f.mergeGlow > 0) {
         f.mergeGlow = (f.mergeGlow - dt * 2.5).clamp(0.0, 1.0);
       }
 
-      // Blink
       if (f.blinkTimer > 0) {
         f.blinkTimer -= dt;
         if (f.blinkTimer < 0) f.blinkTimer = 0;
@@ -177,9 +189,17 @@ class FruitPhysics {
       }
 
       _resolveWalls(f);
+
+      // ── Sleep counter: count frames of low-velocity rest ───────
+      if (f.spawnScale >= 1.0 && f.mergeGlow <= 0.0 &&
+          f.vx.abs() < 6.0 && f.vy.abs() < 6.0) {
+        if (f.sleepCounter < 30) f.sleepCounter++;
+      } else {
+        f.sleepCounter = 0;
+      }
     }
 
-    int iters = fruits.length > 35 ? 3 : (fruits.length > 15 ? 4 : 6);
+    final iters = fruits.length > 35 ? 3 : (fruits.length > 15 ? 4 : 6);
     for (int iter = 0; iter < iters; iter++) {
       _resolveCircleCollisions(fruits);
     }
@@ -222,10 +242,8 @@ class FruitPhysics {
         final rb = b.radius * b.spawnScale;
         final dx = b.x - a.x;
         final minDist = ra + rb;
-        
-        // Fast AABB check to skip sqrt
+
         if (dx.abs() > minDist) continue;
-        
         final dy = b.y - a.y;
         if (dy.abs() > minDist) continue;
 
@@ -240,10 +258,22 @@ class FruitPhysics {
           final pushA = rb / totalR;
           final pushB = ra / totalR;
 
+          // Position correction always runs — prevents permanent overlap between
+          // sleeping fruits that tunnelled into each other on a slow frame.
           a.x -= nx * overlap * pushA;
           a.y -= ny * overlap * pushA;
           b.x += nx * overlap * pushB;
           b.y += ny * overlap * pushB;
+
+          // Both settled: position-correct only; skip impulse to avoid
+          // destabilising an already-stable pile.
+          if (a.sleepCounter > 20 && b.sleepCounter > 20) continue;
+
+          // Wake sleeping fruit when pushed significantly
+          if (overlap > 1.0) {
+            a.sleepCounter = 0;
+            b.sleepCounter = 0;
+          }
 
           final dvx = b.vx - a.vx;
           final dvy = b.vy - a.vy;
@@ -255,9 +285,10 @@ class FruitPhysics {
             a.vy += impulse * ny;
             b.vx -= impulse * nx;
             b.vy -= impulse * ny;
-            // Collision spins them
             a.angularVel += impulse * 0.05;
             b.angularVel -= impulse * 0.05;
+            a.sleepCounter = 0;
+            b.sleepCounter = 0;
           }
         }
       }
@@ -283,25 +314,27 @@ class FruitPhysics {
     }
   }
 
+  // Reused Set to avoid per-tick allocation in detectMerges
+  final _mergeChecked = <int>{};
+
   List<(FruitParticle, FruitParticle)> detectMerges(
       List<FruitParticle> fruits) {
     final merges = <(FruitParticle, FruitParticle)>[];
-    final checked = <int>{};
+    _mergeChecked.clear();
 
     for (int i = 0; i < fruits.length; i++) {
       final a = fruits[i];
       if (!a.alive || a.isPreview || a.isMerging) continue;
-      if (checked.contains(a.id)) continue;
+      if (_mergeChecked.contains(a.id)) continue;
 
       for (int j = i + 1; j < fruits.length; j++) {
         final b = fruits[j];
         if (!b.alive || b.isPreview || b.isMerging) continue;
-        if (checked.contains(b.id)) continue;
+        if (_mergeChecked.contains(b.id)) continue;
         if (a.type != b.type) continue;
 
-        final touch = (a.radius + b.radius) * 1.05;
-        
-        // Fast AABB check
+        final touch = (a.radius * a.spawnScale + b.radius * b.spawnScale) * 1.05;
+
         final dx = b.x - a.x;
         if (dx.abs() > touch) continue;
         final dy = b.y - a.y;
@@ -311,8 +344,8 @@ class FruitPhysics {
 
         if (dist <= touch) {
           merges.add((a, b));
-          checked.add(a.id);
-          checked.add(b.id);
+          _mergeChecked.add(a.id);
+          _mergeChecked.add(b.id);
           break;
         }
       }
@@ -320,23 +353,22 @@ class FruitPhysics {
     return merges;
   }
 
-  /// Create burst particles at merge position
-  static List<MergeParticle> createMergeBurst(
+  /// Create burst particles at merge position — uses instance _rng (no allocation)
+  List<MergeParticle> createMergeBurst(
       double x, double y, Color color, double radius) {
-    final rng = Random();
     final count = 10 + (radius / 10).round().clamp(4, 14);
     return List.generate(count, (i) {
-      final angle = (i / count) * 2 * pi + rng.nextDouble() * 0.4;
-      final speed = 120 + rng.nextDouble() * 180;
-      final size = 3.0 + rng.nextDouble() * 5;
+      final angle = (i / count) * 2 * pi + _rng.nextDouble() * 0.4;
+      final speed = 120 + _rng.nextDouble() * 180;
+      final size = 3.0 + _rng.nextDouble() * 5;
       return MergeParticle(
         x: x,
         y: y,
         vx: cos(angle) * speed,
         vy: sin(angle) * speed,
         radius: size,
-        color: Color.lerp(color, Colors.white, 0.3 + rng.nextDouble() * 0.3)!,
-        life: 0.7 + rng.nextDouble() * 0.3,
+        color: Color.lerp(color, Colors.white, 0.3 + _rng.nextDouble() * 0.3)!,
+        life: 0.7 + _rng.nextDouble() * 0.3,
         maxLife: 1.0,
       );
     });

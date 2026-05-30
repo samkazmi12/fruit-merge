@@ -1,20 +1,22 @@
 import 'dart:math';
 import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+import '../game/fruit_physics.dart';
+import '../game/game_painter.dart';
 import '../models/fruit_data.dart';
 import '../models/level_system.dart';
 import '../services/audio_manager.dart';
 import '../services/storage_service.dart';
 import '../utils/constants.dart';
 import '../utils/responsive.dart';
-import '../game/fruit_physics.dart';
-import '../game/game_painter.dart';
+import 'overlays/game_over_overlay.dart';
 import 'overlays/hud_overlay.dart';
 import 'overlays/pause_overlay.dart';
-import 'overlays/game_over_overlay.dart';
 import 'overlays/watermelon_win_overlay.dart';
 
 enum PowerUpMode { none, bomb, sniper, shaker }
@@ -49,52 +51,74 @@ class _GameScreenState extends State<GameScreen>
   // ── Box layout ─────────────────────────────────────────────────
   double _boxLeft = 0, _boxRight = 0, _boxTop = 0, _boxBottom = 0;
   double _dropY = 0, _gameOverLineY = 0;
+  double _cardsH = 0;
+  double _adH = 0;
+  double _hudH = 0;
   bool _boxReady = false;
+
+  // ── Drop zone visuals ───────────────────────────────────────────
+  ui.Image? _cloudImage;
+  ui.Image? _branchImage;
+  final List<CloudState> _clouds = [];
 
   // ── Game state ─────────────────────────────────────────────────
   FruitType _currentType = FruitType.cherry;
-  FruitType _nextType    = FruitType.cherry;
+  FruitType _nextType = FruitType.cherry;
   double _dropX = 0;
   FruitParticle? _preview;
 
-  int _score      = 0;
-  int _highScore  = 0;
-  int _combo      = 0;
+  int _score = 0;
+  int _highScore = 0;
+  int _combo = 0;
   double _comboTimer = 0;
-  bool _isPaused        = false;
-  bool _isGameOver      = false;
+  bool _isPaused = false;
+  bool _isGameOver = false;
   bool _isWatermelonWin = false;
 
   // ── XP & Level ─────────────────────────────────────────────────
-  int _sessionXp        = 0;   // XP earned this session
-  int  _levelAtStart     = 1;   // level when game started
+  int _sessionXp = 0; // XP earned this session
+  int _levelAtStart = 1; // level when game started
 
   // ── Power-Ups ──────────────────────────────────────────────────
   PowerUpMode _powerUpMode = PowerUpMode.none;
 
   // ── Combo banner ────────────────────────────────────────────────
   double _comboBannerOpacity = 0;
-  double _comboBannerScale   = 1.0;
-  int    _lastShownCombo     = 0;
+  double _comboBannerScale = 1.0;
+  int _lastShownCombo = 0;
 
   // ── Danger level ────────────────────────────────────────────────
   double _dangerLevel = 0;
   bool _wasInDanger = false;
 
+  // ── Physics alive-list buffer (reused every tick, no per-frame alloc) ──
+  final List<FruitParticle> _aliveFruits = [];
+  bool _hasDead = false; // set true whenever a fruit's alive → false
+
+  // ── Drop-weight cache (computed once, avoids List.generate per drop) ──
+  static final List<double> _dropWeights = () {
+    final d = FruitData.droppableFruits;
+    return List.generate(d.length, (i) => (d.length - i).toDouble());
+  }();
+  static final double _dropWeightTotal = _dropWeights.fold(
+    0.0,
+    (s, w) => s + w,
+  );
+
   // ── Best fruit this session ──────────────────────────────────────
-  int _bestFruitIndex = 0;   // FruitType.index of best merged/dropped
+  int _bestFruitIndex = 0; // FruitType.index of best merged/dropped
 
   // ── Lucky drop ──────────────────────────────────────────────────
-  int _dropCount = 0;       // counts drops since last lucky
+  int _dropCount = 0; // counts drops since last lucky
   bool _nextIsLucky = false;
 
   // ── Drag ───────────────────────────────────────────────────────
   bool _isDragging = false;
-  bool _canDrop    = true;
+  bool _canDrop = true;
 
   // ── Session stats ───────────────────────────────────────────────
   int _sessionMerges = 0;
-  int _sessionDrops  = 0;
+  int _sessionDrops = 0;
 
   final Random _rng = Random();
 
@@ -102,8 +126,11 @@ class _GameScreenState extends State<GameScreen>
   final Map<FruitType, ui.Image> _fruitImages = {};
 
   static const _comboColors = [
-    Color(0xFFFFD600), Color(0xFFFF9800),
-    Color(0xFFFF5722), Color(0xFFE91E63), Color(0xFF9C27B0),
+    Color(0xFFFFD600),
+    Color(0xFFFF9800),
+    Color(0xFFFF5722),
+    Color(0xFFE91E63),
+    Color(0xFF9C27B0),
   ];
   Color get _comboColor =>
       _comboColors[(_combo - 2).clamp(0, _comboColors.length - 1)];
@@ -112,7 +139,7 @@ class _GameScreenState extends State<GameScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _highScore    = widget.storage.highScore;
+    _highScore = widget.storage.highScore;
     _levelAtStart = LevelSystem.levelFromXp(widget.storage.totalXp);
     _ticker = createTicker(_onTick)..start();
     _loadFruitImages();
@@ -124,15 +151,15 @@ class _GameScreenState extends State<GameScreen>
 
   Future<void> _loadFruitImages() async {
     const sprites = {
-      FruitType.cherry:     'assets/images/fruit_cherry.png',
+      FruitType.cherry: 'assets/images/fruit_cherry.png',
       FruitType.strawberry: 'assets/images/fruit_strawberry.png',
-      FruitType.grape:      'assets/images/fruit_grape.png',
-      FruitType.orange:     'assets/images/fruit_orange.png',
-      FruitType.apple:      'assets/images/fruit_apple.png',
-      FruitType.pear:       'assets/images/fruit_pear.png',
-      FruitType.peach:      'assets/images/fruit_peach.png',
-      FruitType.pineapple:  'assets/images/fruit_pineapple.png',
-      FruitType.melon:      'assets/images/fruit_melon.png',
+      FruitType.grape: 'assets/images/fruit_grape.png',
+      FruitType.orange: 'assets/images/fruit_orange.png',
+      FruitType.apple: 'assets/images/fruit_apple.png',
+      FruitType.pear: 'assets/images/fruit_pear.png',
+      FruitType.peach: 'assets/images/fruit_peach.png',
+      FruitType.pineapple: 'assets/images/fruit_pineapple.png',
+      FruitType.melon: 'assets/images/fruit_melon.png',
       FruitType.watermelon: 'assets/images/fruit_watermelon.png',
     };
     for (final entry in sprites.entries) {
@@ -140,16 +167,32 @@ class _GameScreenState extends State<GameScreen>
         final data = await rootBundle.load(entry.value);
         final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
         final frame = await codec.getNextFrame();
+        codec.dispose();
         if (mounted) _fruitImages[entry.key] = frame.image;
+      } catch (_) {}
+    }
+    for (final path in const [
+      'assets/images/asset_cloud.png',
+      'assets/images/asset_branch.png',
+    ]) {
+      try {
+        final data = await rootBundle.load(path);
+        final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+        final frame = await codec.getNextFrame();
+        codec.dispose();
+        if (mounted) {
+          if (path.contains('cloud')) _cloudImage = frame.image;
+          if (path.contains('branch')) _branchImage = frame.image;
+        }
       } catch (_) {}
     }
     if (mounted) setState(() {});
   }
 
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       _saveGameState();
       _flushStats();
       if (!_isGameOver && !_isPaused) {
@@ -172,49 +215,70 @@ class _GameScreenState extends State<GameScreen>
     // Constrain jar max width so it doesn't deform on tablets/landscape
     final effectiveWidth = size.width.clamp(0.0, 450.0);
     final offsetLeft = (size.width - effectiveWidth) / 2;
-    // Constrain jar max height relative to width so it's not super tall on iPads
-    final maxJarHeight = effectiveWidth * 1.8; // Standard 16:9 vertical feel
-    
-    // Narrower jar + higher botPad for power-up toolbar
+    // Cap jar height so it doesn't dominate the screen on tall/large devices
     final sf = (size.width / 390).clamp(0.75, 1.35);
-    final hudH = 165.0 * sf;
-    const sidePad = 40.0;
-    final botPad = 100.0 * sf;
-    _boxLeft      = offsetLeft + sidePad;
-    _boxRight     = offsetLeft + effectiveWidth - sidePad;
-    _boxTop       = hudH;
-    
-    double proposedBottom = size.height - botPad;
-    if (proposedBottom - _boxTop > maxJarHeight) {
-      proposedBottom = _boxTop + maxJarHeight;
-    }
-    _boxBottom = proposedBottom;
-    
+    final hudH = 130.0 * sf;
+    _hudH = hudH;
+    _cardsH = 64.0 * sf;
+    _adH = 60.0;
+    const sidePad = 8.0;
+    _boxLeft = offsetLeft + sidePad;
+    _boxRight = offsetLeft + effectiveWidth - sidePad;
+    _boxBottom = size.height - _cardsH * 2 - _adH;
+    final jarWidth = _boxRight - _boxLeft;
+    _boxTop = (_boxBottom - jarWidth).clamp(hudH + 16, _boxBottom - 80);
+
     _gameOverLineY = _boxTop + GameConstants.gameOverLineOffsetPx;
     _physics = FruitPhysics(
-      boxLeft: _boxLeft, boxRight: _boxRight,
-      boxTop: _boxTop, boxBottom: _boxBottom,
+      boxLeft: _boxLeft,
+      boxRight: _boxRight,
+      boxTop: _boxTop,
+      boxBottom: _boxBottom,
     );
     _boxReady = true;
-    _dropX    = (_boxLeft + _boxRight) / 2;
+    _dropX = (_boxLeft + _boxRight) / 2;
+
+    // ── Init clouds in drop zone ──────────────────────────────────
+    if (_clouds.isEmpty) {
+      final dzTop = hudH + 10;
+      final dzH = _boxTop - hudH;
+      // fruit diameter range: orange (42px) → watermelon (106px)
+      _clouds.addAll([
+        CloudState(
+          x: _boxLeft + jarWidth * 0.18,
+          y: dzTop + dzH * 0.25,
+          width: 68,
+          speed: 18,
+        ),
+        CloudState(
+          x: _boxLeft + jarWidth * 0.72,
+          y: dzTop + dzH * 0.55,
+          width: 46,
+          speed: -22,
+        ),
+        CloudState(
+          x: _boxLeft + jarWidth * 0.45,
+          y: dzTop + dzH * 0.78,
+          width: 88,
+          speed: 14,
+        ),
+      ]);
+    }
+
     _nextType = _randomType();
     if (!_tryRestoreGame()) _spawnNext();
   }
 
   FruitType _randomType({bool lucky = false}) {
-    final droppable = FruitData.droppableFruits;
+    final droppable = FruitData.droppableFruits; // cached — no allocation
     if (lucky) {
-      // Give next tier fruit (cap at level 4 = apple)
       final currentIdx = droppable.indexWhere((f) => f.type == _nextType);
-      final luckIdx = (currentIdx + 1).clamp(0, droppable.length - 1);
+      final luckIdx = (currentIdx + 1).clamp(0, droppable.length - 2);
       return droppable[luckIdx].type;
     }
-    final wts = List.generate(
-        droppable.length, (i) => (droppable.length - i).toDouble());
-    final total = wts.reduce((a, b) => a + b);
-    var r = _rng.nextDouble() * total;
+    var r = _rng.nextDouble() * _dropWeightTotal;
     for (int i = 0; i < droppable.length; i++) {
-      r -= wts[i];
+      r -= _dropWeights[i];
       if (r <= 0) return droppable[i].type;
     }
     return droppable[0].type;
@@ -234,13 +298,19 @@ class _GameScreenState extends State<GameScreen>
     _nextIsLucky = false;
 
     final data = FruitData.fromType(_currentType);
-    _dropY  = _boxTop - data.radiusPx - 8;
-    _dropX  = _dropX.clamp(
-        _boxLeft + data.radiusPx + 2, _boxRight - data.radiusPx - 2);
+    _dropY = _boxTop - data.radiusPx - 8;
+    _dropX = _dropX.clamp(
+      _boxLeft + data.radiusPx + 2,
+      _boxRight - data.radiusPx - 2,
+    );
 
     _preview = FruitParticle(
-      id: _nextId++, type: _currentType,
-      x: _dropX, y: _dropY, radius: data.radiusPx, isPreview: true,
+      id: _nextId++,
+      type: _currentType,
+      x: _dropX,
+      y: _dropY,
+      radius: data.radiusPx,
+      isPreview: true,
     );
     _fruits.add(_preview!);
   }
@@ -249,18 +319,18 @@ class _GameScreenState extends State<GameScreen>
     final state = widget.storage.loadGameState();
     if (state == null) return false;
     try {
-      _score          = state['score'] as int;
-      _highScore      = max(_highScore, _score);
-      _currentType    = FruitType.values.byName(state['currentType'] as String);
-      _nextType       = FruitType.values.byName(state['nextType'] as String);
-      _dropX          = (state['dropX'] as num).toDouble();
-      _dropCount      = state['dropCount'] as int;
-      _nextIsLucky    = state['nextIsLucky'] as bool;
-      _sessionXp      = state['sessionXp'] as int;
-      _sessionMerges  = state['sessionMerges'] as int;
-      _sessionDrops   = state['sessionDrops'] as int;
+      _score = state['score'] as int;
+      _highScore = max(_highScore, _score);
+      _currentType = FruitType.values.byName(state['currentType'] as String);
+      _nextType = FruitType.values.byName(state['nextType'] as String);
+      _dropX = (state['dropX'] as num).toDouble();
+      _dropCount = state['dropCount'] as int;
+      _nextIsLucky = state['nextIsLucky'] as bool;
+      _sessionXp = state['sessionXp'] as int;
+      _sessionMerges = state['sessionMerges'] as int;
+      _sessionDrops = state['sessionDrops'] as int;
       _bestFruitIndex = state['bestFruitIndex'] as int;
-      _nextId         = state['nextId'] as int;
+      _nextId = state['nextId'] as int;
       for (final j in state['fruits'] as List<dynamic>) {
         _fruits.add(FruitParticle.fromJson(j as Map<String, dynamic>));
       }
@@ -278,10 +348,16 @@ class _GameScreenState extends State<GameScreen>
     final data = FruitData.fromType(_currentType);
     _dropY = _boxTop - data.radiusPx - 8;
     _dropX = _dropX.clamp(
-        _boxLeft + data.radiusPx + 2, _boxRight - data.radiusPx - 2);
+      _boxLeft + data.radiusPx + 2,
+      _boxRight - data.radiusPx - 2,
+    );
     _preview = FruitParticle(
-      id: _nextId++, type: _currentType,
-      x: _dropX, y: _dropY, radius: data.radiusPx, isPreview: true,
+      id: _nextId++,
+      type: _currentType,
+      x: _dropX,
+      y: _dropY,
+      radius: data.radiusPx,
+      isPreview: true,
     );
     _fruits.add(_preview!);
   }
@@ -315,11 +391,11 @@ class _GameScreenState extends State<GameScreen>
 
     if (widget.storage.vibrationEnabled) HapticFeedback.lightImpact();
     widget.audio.playDrop();
-    p.isPreview  = false;
-    p.vy         = 60;
+    p.isPreview = false;
+    p.vy = 60;
     p.angularVel = (_rng.nextDouble() - 0.5) * 4.0;
-    _preview     = null;
-    _canDrop     = false;
+    _preview = null;
+    _canDrop = false;
     _sessionDrops++;
 
     // XP per drop
@@ -343,12 +419,21 @@ class _GameScreenState extends State<GameScreen>
 
     if (_isPaused || _isGameOver || _isWatermelonWin) return;
 
-    _physics!.step(_fruits.where((f) => f.alive).toList(), dt);
-    _physics!.stepParticles(_particles, dt);
-    _physics!.stepPopups(_popups, dt);
+    // Rebuild alive buffer — reuses the same List object every tick
+    _aliveFruits.clear();
+    for (final f in _fruits) {
+      if (f.alive) _aliveFruits.add(f);
+    }
 
-    _particles.removeWhere((p) => !p.alive);
-    _popups.removeWhere((p) => !p.alive);
+    _physics!.step(_aliveFruits, dt);
+    if (_particles.isNotEmpty) {
+      _physics!.stepParticles(_particles, dt);
+      _particles.removeWhere((p) => !p.alive);
+    }
+    if (_popups.isNotEmpty) {
+      _physics!.stepPopups(_popups, dt);
+      _popups.removeWhere((p) => !p.alive);
+    }
 
     // Combo timer
     if (_comboTimer > 0) {
@@ -358,34 +443,48 @@ class _GameScreenState extends State<GameScreen>
     // Combo banner fade
     if (_comboBannerOpacity > 0) {
       _comboBannerOpacity = (_comboBannerOpacity - dt * 1.6).clamp(0, 1);
-      _comboBannerScale   = (_comboBannerScale - dt * 2.5).clamp(1.0, 2.0);
+      _comboBannerScale = (_comboBannerScale - dt * 2.5).clamp(1.0, 2.0);
     }
-    // Level up banner was removed as XP is now granted at game over
 
-    final alive = _fruits.where((f) => f.alive).toList();
-    final merges = _physics!.detectMerges(alive);
-    for (final (a, b) in merges) { _handleMerge(a, b); }
+    final merges = _physics!.detectMerges(_aliveFruits);
+    for (final (a, b) in merges) {
+      _handleMerge(a, b);
+    }
 
-    _fruits.removeWhere((f) => !f.alive);
+    // Only prune dead fruits when merges (or kills) happened this tick
+    if (_hasDead) {
+      _fruits.removeWhere((f) => !f.alive);
+      _aliveFruits.removeWhere((f) => !f.alive);
+      _hasDead = false;
+    }
+
     _updateDangerLevel();
     _checkGameOver();
+
+    // ── Drift clouds left/right, wrap at box edges ────────────────
+    for (final c in _clouds) {
+      c.x += c.speed * dt;
+      final hw = c.width / 2;
+      if (c.speed > 0 && c.x - hw > _boxRight) c.x = _boxLeft - hw;
+      if (c.speed < 0 && c.x + hw < _boxLeft) c.x = _boxRight + hw;
+    }
+
     _tickNotifier.value++;
   }
-
-
 
   void _handleMerge(FruitParticle a, FruitParticle b) {
     a.isMerging = true;
     b.isMerging = true;
 
     final data = FruitData.fromType(a.type);
-    final mx   = (a.x + b.x) / 2;
-    final my   = (a.y + b.y) / 2;
-    final mvx  = (a.vx + b.vx) / 2;
-    final mvy  = (a.vy + b.vy) / 2;
+    final mx = (a.x + b.x) / 2;
+    final my = (a.y + b.y) / 2;
+    final mvx = (a.vx + b.vx) / 2;
+    final mvy = (a.vy + b.vy) / 2;
 
     a.alive = false;
     b.alive = false;
+    _hasDead = true;
     _sessionMerges++;
     if (widget.storage.vibrationEnabled) HapticFeedback.mediumImpact();
 
@@ -395,18 +494,22 @@ class _GameScreenState extends State<GameScreen>
     }
 
     // Score
-    final mult   = _combo > 1 ? _combo : 1;
+    final mult = _combo > 1 ? _combo : 1;
     final gained = data.points * mult;
     _score += gained;
 
     // Combo
-    if (_comboTimer > 0) { _combo++; } else { _combo = 1; }
+    if (_comboTimer > 0) {
+      _combo++;
+    } else {
+      _combo = 1;
+    }
     _comboTimer = GameConstants.comboTimeWindow;
 
     if (_combo >= 2) {
       _comboBannerOpacity = 1.0;
-      _comboBannerScale   = 1.55;
-      _lastShownCombo     = _combo;
+      _comboBannerScale = 1.55;
+      _lastShownCombo = _combo;
     }
 
     // XP
@@ -414,25 +517,43 @@ class _GameScreenState extends State<GameScreen>
     if (data.type == FruitType.watermelon) xp += LevelSystem.xpWatermelon;
     _gainXp(xp);
 
-    // Particles + popup
-    _particles.addAll(
-        FruitPhysics.createMergeBurst(mx, my, data.color, a.radius));
-    _popups.add(ScorePopup(
-      x: mx, y: my - a.radius - 10,
-      text: '+$gained',
-      color: _combo > 1 ? _comboColor : const Color(0xFFFFD600),
-    ));
+    // Particles + popup — cap total to prevent GC pressure during cascades
+    final burst = _physics!.createMergeBurst(mx, my, data.color, a.radius);
+    if (_particles.length + burst.length > 50) {
+      final excess = (_particles.length + burst.length - 50).clamp(
+        0,
+        _particles.length,
+      );
+      if (excess > 0) _particles.removeRange(0, excess);
+    }
+    _particles.addAll(burst);
+    _popups.add(
+      ScorePopup(
+        x: mx,
+        y: my - a.radius - 10,
+        text: '+$gained',
+        color: _combo > 1 ? _comboColor : const Color(0xFFFFD600),
+      ),
+    );
 
     // Evolved fruit
     if (data.canEvolve) {
-      final nextData  = FruitData.fromType(data.nextType!);
-      final initSpin  = (_rng.nextDouble() - 0.5) * 6.0;
-      _fruits.add(FruitParticle(
-        id: _nextId++, type: data.nextType!,
-        x: mx, y: my, vx: mvx, vy: mvy - 90,
-        radius: nextData.radiusPx, angularVel: initSpin,
-        spawnScale: 0.1, mergeGlow: 1.0,
-      ));
+      final nextData = FruitData.fromType(data.nextType!);
+      final initSpin = (_rng.nextDouble() - 0.5) * 6.0;
+      _fruits.add(
+        FruitParticle(
+          id: _nextId++,
+          type: data.nextType!,
+          x: mx,
+          y: my,
+          vx: mvx,
+          vy: mvy - 90,
+          radius: nextData.radiusPx,
+          angularVel: initSpin,
+          spawnScale: 0.1,
+          mergeGlow: 1.0,
+        ),
+      );
     } else {
       Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) _triggerWatermelonWin();
@@ -470,11 +591,14 @@ class _GameScreenState extends State<GameScreen>
 
   void _updateDangerLevel() {
     double highestY = _boxBottom;
-    for (final f in _fruits) {
-      if (!f.alive || f.isPreview) continue;
-      if (f.y - f.radius < highestY) highestY = f.y - f.radius;
+    for (final f in _aliveFruits) {
+      if (f.isPreview) continue;
+      if (f.y - f.radius < _boxTop) continue;
+      if (f.vy > 50) continue;
+      final topEdge = f.y - f.radius;
+      if (topEdge < highestY) highestY = topEdge;
     }
-    final boxH  = _boxBottom - _boxTop;
+    final boxH = _boxBottom - _boxTop;
     final filled = (_boxBottom - highestY) / boxH;
     _dangerLevel = ((filled - 0.5) / 0.5).clamp(0.0, 1.0);
     final nowInDanger = _dangerLevel > 0;
@@ -483,10 +607,11 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _checkGameOver() {
-    for (final f in _fruits) {
-      if (!f.alive || f.isPreview || f.isMerging) continue;
+    for (final f in _aliveFruits) {
+      if (f.isPreview || f.isMerging) continue;
       if (f.y - f.radius < _gameOverLineY &&
-          f.vy.abs() < 30 && f.vx.abs() < 30) {
+          f.vy.abs() < 30 &&
+          f.vx.abs() < 30) {
         _triggerGameOver();
         return;
       }
@@ -506,24 +631,48 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Future<void> _flushStats() async {
-    await widget.storage.addXp(_sessionXp);
+    // Snapshot before any await so a concurrent _restartGame reset can't zero
+    // out session fields while this chain is still running.
+    final xp = _sessionXp;
+    final merges = _sessionMerges;
+    final drops = _sessionDrops;
+    final bestFruit = _bestFruitIndex;
+    final highScore = _highScore;
+    await widget.storage.addXp(xp);
     await widget.storage.incrementGamesPlayed();
-    await widget.storage.addMerges(_sessionMerges);
-    await widget.storage.addDrops(_sessionDrops);
-    await widget.storage.updateBiggestFruit(_bestFruitIndex);
-    await widget.storage.setHighScore(_score);
+    await widget.storage.addMerges(merges);
+    await widget.storage.addDrops(drops);
+    await widget.storage.updateBiggestFruit(bestFruit);
+    await widget.storage.setHighScore(highScore);
   }
 
   void _restartGame() {
     widget.storage.clearGameState();
     setState(() {
-      _fruits.clear(); _particles.clear(); _popups.clear();
-      _preview = null; _score = 0; _combo = 0; _comboTimer = 0;
-      _comboBannerOpacity = 0; _dangerLevel = 0; _wasInDanger = false;
-      _isPaused = false; _isGameOver = false; _isWatermelonWin = false;
-      _canDrop  = true; _lastTime = Duration.zero;
-      _sessionXp = 0; _sessionMerges = 0; _sessionDrops = 0;
-      _bestFruitIndex = 0; _dropCount = 0;
+      _fruits.clear();
+      _particles.clear();
+      _popups.clear();
+      _aliveFruits.clear();
+      _hasDead = false;
+      _preview = null;
+      _isDragging = false;
+      _score = 0;
+      _combo = 0;
+      _comboTimer = 0;
+      _comboBannerOpacity = 0;
+      _dangerLevel = 0;
+      _wasInDanger = false;
+      _isPaused = false;
+      _isGameOver = false;
+      _isWatermelonWin = false;
+      _canDrop = true;
+      _lastTime = Duration.zero;
+      _sessionXp = 0;
+      _sessionMerges = 0;
+      _sessionDrops = 0;
+      _bestFruitIndex = 0;
+      _dropCount = 0;
+      _nextType = _randomType();
     });
     _levelAtStart = LevelSystem.levelFromXp(widget.storage.totalXp);
     _spawnNext();
@@ -536,17 +685,20 @@ class _GameScreenState extends State<GameScreen>
     _isDragging = true;
     _moveDrop(d.localPosition.dx);
   }
+
   void _onPanUpdate(DragUpdateDetails d) {
     if (!_isDragging || _isGameOver || _isPaused) return;
     if (_powerUpMode != PowerUpMode.none) return;
     _moveDrop(d.localPosition.dx);
   }
+
   void _onPanEnd(DragEndDetails _) {
     if (!_isDragging) return;
     if (_powerUpMode != PowerUpMode.none) return;
     _isDragging = false;
     _dropFruit();
   }
+
   void _onTapUp(TapUpDetails d) {
     if (_isGameOver || _isPaused || _isWatermelonWin) return;
     if (_powerUpMode != PowerUpMode.none) {
@@ -566,7 +718,9 @@ class _GameScreenState extends State<GameScreen>
   void _applyPowerUp(Offset pos) {
     if (_powerUpMode == PowerUpMode.none) return;
     // Find tapped fruit
-    final alive = _fruits.where((f) => f.alive && !f.isPreview && f.y > _boxTop).toList();
+    final alive = _fruits
+        .where((f) => f.alive && !f.isPreview && f.y > _boxTop)
+        .toList();
     FruitParticle? target;
     for (final f in alive) {
       final dx = f.x - pos.dx;
@@ -605,32 +759,45 @@ class _GameScreenState extends State<GameScreen>
         // spawn particles
         final data = FruitData.fromType(f.type);
         for (int i = 0; i < 5; i++) {
-          _particles.add(MergeParticle(
-            x: f.x, y: f.y, color: data.color, radius: 8,
-            vx: (f.x - hitPos.dx) * 2 + (_rng.nextDouble() - 0.5) * 100,
-            vy: (f.y - hitPos.dy) * 2 + (_rng.nextDouble() - 0.5) * 100,
-          ));
+          _particles.add(
+            MergeParticle(
+              x: f.x,
+              y: f.y,
+              color: data.color,
+              radius: 8,
+              vx: (f.x - hitPos.dx) * 2 + (_rng.nextDouble() - 0.5) * 100,
+              vy: (f.y - hitPos.dy) * 2 + (_rng.nextDouble() - 0.5) * 100,
+            ),
+          );
         }
       }
     }
+    _hasDead = true;
     widget.audio.playBomb();
     setState(() => _powerUpMode = PowerUpMode.none);
   }
 
   void _useSniper(FruitParticle target) {
     final data = FruitData.fromType(target.type);
-    if (data.level < 10) { // Max level is watermelon (level 11) but array is 0-indexed, wait: All fruits length is 11, so level 10 is max generic. 
+    if (data.level < 10) {
+      // Max level is watermelon (level 11) but array is 0-indexed, wait: All fruits length is 11, so level 10 is max generic.
       widget.storage.consumeSniper();
       final dropList = FruitData.allFruits;
       final nextData = dropList.firstWhere((d) => d.level == data.level + 1);
       target.type = nextData.type;
       target.radius = nextData.radiusPx;
-      
+
       for (int i = 0; i < 8; i++) {
-        _particles.add(MergeParticle(
-          x: target.x, y: target.y, color: nextData.color, radius: 10,
-          vx: (_rng.nextDouble() - 0.5) * 200, vy: (_rng.nextDouble() - 0.5) * 200,
-        ));
+        _particles.add(
+          MergeParticle(
+            x: target.x,
+            y: target.y,
+            color: nextData.color,
+            radius: 10,
+            vx: (_rng.nextDouble() - 0.5) * 200,
+            vy: (_rng.nextDouble() - 0.5) * 200,
+          ),
+        );
       }
       widget.audio.playSniper();
     }
@@ -646,6 +813,7 @@ class _GameScreenState extends State<GameScreen>
     }
     widget.audio.playShaker();
   }
+
   void _moveDrop(double screenX) {
     if (_preview == null) return;
     final r = _preview!.radius;
@@ -658,191 +826,245 @@ class _GameScreenState extends State<GameScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF1A0533), Color(0xFF0D1B6B), Color(0xFF0A2744)],
-            stops: [0.0, 0.5, 1.0],
-          ),
-        ),
+        color: const Color(0xFFDDE5B6),
         child: SafeArea(
-          child: LayoutBuilder(builder: (context, constraints) {
-            final size = Size(constraints.maxWidth, constraints.maxHeight);
-            _initBox(size);
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final size = Size(constraints.maxWidth, constraints.maxHeight);
+              _initBox(size);
 
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onPanStart: _onPanStart, onPanUpdate: _onPanUpdate,
-              onPanEnd: _onPanEnd, onTapUp: _onTapUp,
-              child: AnimatedBuilder(
-                animation: _tickNotifier,
-                builder: (context, child) {
-                  return Stack(
-                    children: [
-                  // ── Canvas ─────────────────────────────────
-                  Positioned.fill(
-                    child: _boxReady
-                        ? RepaintBoundary(
-                            child: CustomPaint(
-                              painter: GamePainter(
-                                fruits:   _fruits.where((f) => f.alive).toList(),
-                                particles: List.from(_particles),
-                                boxLeft: _boxLeft, boxRight: _boxRight,
-                                boxTop: _boxTop, boxBottom: _boxBottom,
-                                gameOverLineY: _gameOverLineY,
-                                dangerLevel: _dangerLevel,
-                                fruitImages: _fruitImages,
-                              ),
-                              size: size,
-                            ),
-                          )
-                        : const SizedBox(),
-                  ),
-
-                  // ── Evolution progress bar ──────────────────
-                  if (_boxReady)
-                    Positioned(
-                      top: _boxTop - 6,
-                      left: _boxLeft, right: _boxRight,
-                      child: RepaintBoundary(child: _evolutionBar(context)),
-                    ),
-
-                  // ── Combo banner ────────────────────────────
-                  if (_comboBannerOpacity > 0 && _combo >= 2)
-                    Positioned(
-                      top: _boxTop + 22, left: 0, right: 0,
-                      child: IgnorePointer(
-                        child: Center(
-                          child: Transform.scale(
-                            scale: _comboBannerScale,
-                            child: Opacity(
-                              opacity: _comboBannerOpacity,
-                              child: Container(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: context.s(22), vertical: context.s(8)),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [_comboColor,
-                                      _comboColor.withValues(alpha: 0.7)],
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: _onPanStart,
+                onPanUpdate: _onPanUpdate,
+                onPanEnd: _onPanEnd,
+                onTapUp: _onTapUp,
+                child: AnimatedBuilder(
+                  animation: _tickNotifier,
+                  builder: (context, child) {
+                    return Stack(
+                      children: [
+                        // ── Canvas ─────────────────────────────────
+                        Positioned.fill(
+                          child: _boxReady
+                              ? RepaintBoundary(
+                                  child: CustomPaint(
+                                    painter: GamePainter(
+                                      fruits: _aliveFruits,
+                                      particles: _particles,
+                                      boxLeft: _boxLeft,
+                                      boxRight: _boxRight,
+                                      boxTop: _boxTop,
+                                      boxBottom: _boxBottom,
+                                      gameOverLineY: _gameOverLineY,
+                                      dangerLevel: _dangerLevel,
+                                      fruitImages: _fruitImages,
+                                      clouds: _clouds,
+                                      cloudImage: _cloudImage,
+                                      branchImage: _branchImage,
+                                      dropX: _dropX,
+                                      dropY: _dropY,
+                                      dropFruitRadius: _preview?.radius ?? 20,
+                                      showDropper:
+                                          _boxReady &&
+                                          !_isGameOver &&
+                                          !_isPaused,
+                                    ),
+                                    size: size,
                                   ),
-                                  borderRadius: BorderRadius.circular(context.s(30)),
-                                  boxShadow: [BoxShadow(
-                                    color: _comboColor.withValues(alpha: 0.6),
-                                    blurRadius: 20, spreadRadius: 2,
-                                  )],
+                                )
+                              : const SizedBox(),
+                        ),
+
+                        // ── Ad banner placeholder ─────────────────────
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          height: _adH,
+                          child: Container(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            child: Center(
+                              child: Text(
+                                'AD',
+                                style: GoogleFonts.fredoka(
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  fontSize: 13,
+                                  letterSpacing: 2,
                                 ),
-                                child: Text('${_lastShownCombo}x COMBO! 🔥',
-                                    style: GoogleFonts.fredoka(
-                                      fontSize: context.sp(26),
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white, letterSpacing: 1.2,
-                                    )),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
 
-                  // ── Native Overlay Score Popups ─────────────────
-                  ..._popups.map((p) => Positioned(
-                    left: p.x - 40, // rough centering
-                    top: p.y - 20,
-                    child: IgnorePointer(
-                      child: Opacity(
-                        opacity: p.life.clamp(0.0, 1.0),
-                        child: Transform.scale(
-                          scale: 0.6 + p.life.clamp(0.0, 1.0) * 0.4,
-                          child: Text(
-                            p.text,
-                            style: TextStyle(
-                              fontSize: context.sp(22),
-                              fontWeight: FontWeight.w900,
-                              color: p.color,
-                              shadows: [
-                                Shadow(
-                                  color: Colors.black.withValues(alpha: p.life.clamp(0.0, 1.0) * 0.4),
-                                  offset: const Offset(1, 1),
-                                  blurRadius: 3,
+                        // ── Evolution progress strip ──────────────────
+                        Positioned(
+                          bottom: _adH + _cardsH,
+                          left: 0,
+                          right: 0,
+                          height: _cardsH,
+                          child: RepaintBoundary(child: _evolutionBar(context)),
+                        ),
+
+                        // ── Combo banner ────────────────────────────
+                        if (_comboBannerOpacity > 0 && _combo >= 2)
+                          Positioned(
+                            top: _boxTop + 22,
+                            left: 0,
+                            right: 0,
+                            child: IgnorePointer(
+                              child: Center(
+                                child: Transform.scale(
+                                  scale: _comboBannerScale,
+                                  child: Opacity(
+                                    opacity: _comboBannerOpacity,
+                                    child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: context.s(22),
+                                        vertical: context.s(8),
+                                      ),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            _comboColor,
+                                            _comboColor.withValues(alpha: 0.7),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          context.s(30),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: _comboColor.withValues(
+                                              alpha: 0.6,
+                                            ),
+                                            blurRadius: 20,
+                                            spreadRadius: 2,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Text(
+                                        '${_lastShownCombo}x COMBO! 🔥',
+                                        style: GoogleFonts.fredoka(
+                                          fontSize: context.sp(26),
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                          letterSpacing: 1.2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ],
+                              ),
+                            ),
+                          ),
+
+                        // ── Native Overlay Score Popups ─────────────────
+                        ..._popups.map(
+                          (p) => Positioned(
+                            left: p.x - 40, // rough centering
+                            top: p.y - 20,
+                            child: IgnorePointer(
+                              child: Opacity(
+                                opacity: p.life.clamp(0.0, 1.0),
+                                child: Transform.scale(
+                                  scale: 0.6 + p.life.clamp(0.0, 1.0) * 0.4,
+                                  child: Text(
+                                    p.text,
+                                    style: TextStyle(
+                                      fontSize: context.sp(22),
+                                      fontWeight: FontWeight.w900,
+                                      color: p.color,
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withValues(
+                                            alpha: p.life.clamp(0.0, 1.0) * 0.4,
+                                          ),
+                                          offset: const Offset(1, 1),
+                                          blurRadius: 3,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  )),
 
-                  // ── HUD (RepaintBoundary so score doesn't ──
-                  // trigger canvas repaint)
-                  Positioned(
-                    top: 0, left: 0, right: 0,
-                    child: RepaintBoundary(
-                      child: HudOverlay(
-                        score: _score,
-                        highScore: _highScore,
-                        combo: _combo,
-                        nextFruit: _nextType,
-                        bestFruitIndex: _bestFruitIndex,
-                        currentLevel: _levelAtStart,
-                        onPause: () {
-                          widget.audio.stopBackgroundMusic(); // pauses, keeps position
-                          setState(() => _isPaused = true);
-                        },
-                      ),
-                    ),
-                  ),
+                        // ── HUD (RepaintBoundary so score doesn't ──
+                        // trigger canvas repaint)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: RepaintBoundary(
+                            child: HudOverlay(
+                              score: _score,
+                              highScore: _highScore,
+                              combo: _combo,
+                              nextFruit: _nextType,
+                              bestFruitIndex: _bestFruitIndex,
+                              currentLevel: _levelAtStart,
+                              onPause: () {
+                                widget.audio
+                                    .stopBackgroundMusic(); // pauses, keeps position
+                                setState(() => _isPaused = true);
+                              },
+                            ),
+                          ),
+                        ),
 
-                  // ── Power-Ups Toolbar ─────────────────────────
-                  if (_boxReady && !_isGameOver && !_isPaused)
-                    Positioned(
-                      bottom: 0, left: 0, right: 0,
-                      height: context.s(100),
-                      child: SafeArea(
-                        child: _powerUpToolbar(context),
-                      ),
-                    ),
+                        // ── Power-Up Cards ─────────────────────────────
+                        if (_boxReady && !_isGameOver && !_isPaused)
+                          Positioned(
+                            bottom: _adH,
+                            left: 0,
+                            right: 0,
+                            height: _cardsH,
+                            child: _powerUpCards(context),
+                          ),
 
-                  if (_isPaused)
-                    PauseOverlay(
-                      audio: widget.audio,
-                      onResume: () {
-                        widget.audio.resumeGameMusic();
-                        setState(() => _isPaused = false);
-                      },
-                      onRestart: () {
-                        setState(() => _isPaused = false);
-                        _restartGame();
-                      },
-                      onHome: () => Navigator.pop(context),
-                    ),
+                        if (_isPaused)
+                          PauseOverlay(
+                            audio: widget.audio,
+                            onResume: () {
+                              widget.audio.resumeGameMusic();
+                              setState(() => _isPaused = false);
+                            },
+                            onRestart: () {
+                              setState(() => _isPaused = false);
+                              _restartGame();
+                            },
+                            onHome: () => Navigator.pop(context),
+                          ),
 
-                  if (_isGameOver)
-                    GameOverOverlay(
-                      score: _score,
-                      highScore: _highScore,
-                      isNewHighScore: _score > 0 && _score >= _highScore,
-                      sessionXp: _sessionXp,
-                      onPlayAgain: _restartGame,
-                      onHome: () => Navigator.pop(context),
-                    ),
+                        if (_isGameOver)
+                          GameOverOverlay(
+                            score: _score,
+                            highScore: _highScore,
+                            isNewHighScore: _score > 0 && _score >= _highScore,
+                            sessionXp: _sessionXp,
+                            onPlayAgain: _restartGame,
+                            onHome: () => Navigator.pop(context),
+                          ),
 
-                  if (_isWatermelonWin)
-                    WatermelonWinOverlay(
-                      score: _score,
-                      highScore: _highScore,
-                      isNewHighScore: _score > 0 && _score >= _highScore,
-                      sessionXp: _sessionXp,
-                      onPlayAgain: _restartGame,
-                      onHome: () => Navigator.pop(context),
-                    ),
-                  ],
-                  );
-                },
-              ),
-            );
-          }),
+                        if (_isWatermelonWin)
+                          WatermelonWinOverlay(
+                            score: _score,
+                            highScore: _highScore,
+                            isNewHighScore: _score > 0 && _score >= _highScore,
+                            sessionXp: _sessionXp,
+                            onPlayAgain: _restartGame,
+                            onHome: () => Navigator.pop(context),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -850,133 +1072,214 @@ class _GameScreenState extends State<GameScreen>
 
   Widget _evolutionBar(BuildContext context) {
     final all = FruitData.allFruits;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: context.s(2)),
+    return Container(
+      margin: EdgeInsets.fromLTRB(
+        context.s(14),
+        context.s(10),
+        context.s(14),
+        context.s(10),
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: context.s(10),
+        vertical: context.s(7),
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(context.s(24)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: all.asMap().entries.map((e) {
           final unlocked = e.key <= _bestFruitIndex;
-          return Opacity(
-            opacity: unlocked ? 1.0 : 0.3,
-            child: Text(e.value.emoji,
-                style: TextStyle(fontSize: unlocked ? context.sp(14) : context.sp(11))),
+          // Highlight the very next fruit to unlock
+          final isNext = e.key == _bestFruitIndex + 1;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 400),
+            padding: isNext ? EdgeInsets.all(context.s(3)) : EdgeInsets.zero,
+            decoration: isNext
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      width: 1,
+                    ),
+                  )
+                : const BoxDecoration(),
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 400),
+              opacity: unlocked ? 1.0 : (isNext ? 0.55 : 0.22),
+              child: Text(
+                e.value.emoji,
+                style: TextStyle(
+                  fontSize: context.sp(unlocked ? 18 : (isNext ? 15 : 12)),
+                ),
+              ),
+            ),
           );
         }).toList(),
       ),
     );
   }
 
-  Widget _powerUpToolbar(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: context.s(20), vertical: context.s(10)),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A0533).withValues(alpha: 0.8),
-        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _powerUpBtn(
-                context: context,
-                icon: '💣',
-                label: 'Bomb',
-                count: widget.storage.bombCount,
-                isActive: _powerUpMode == PowerUpMode.bomb,
-                onTap: () {
-                  if (widget.storage.bombCount > 0) {
-                    setState(() => _powerUpMode = (_powerUpMode == PowerUpMode.bomb) ? PowerUpMode.none : PowerUpMode.bomb);
-                  }
-                },
-              ),
-              _powerUpBtn(
-                context: context,
-                icon: '🪇',
-                label: 'Shaker',
-                count: widget.storage.shakerCount,
-                isActive: _powerUpMode == PowerUpMode.shaker,
-                onTap: () {
-                  if (widget.storage.shakerCount > 0) {
-                    setState(() => _powerUpMode = (_powerUpMode == PowerUpMode.shaker) ? PowerUpMode.none : PowerUpMode.shaker);
-                  }
-                },
-              ),
-              _powerUpBtn(
-                context: context,
-                icon: '🎯',
-                label: 'Sniper',
-                count: widget.storage.sniperCount,
-                isActive: _powerUpMode == PowerUpMode.sniper,
-                onTap: () {
-                  if (widget.storage.sniperCount > 0) {
-                    setState(() => _powerUpMode = (_powerUpMode == PowerUpMode.sniper) ? PowerUpMode.none : PowerUpMode.sniper);
-                  }
-                },
-              ),
-            ],
-          ),
-          if (_powerUpMode != PowerUpMode.none)
-            Positioned(
-              top: context.s(-40),
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: context.s(16), vertical: context.s(6)),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFD600),
-                  borderRadius: BorderRadius.circular(context.s(20)),
-                ),
-                child: Text(
-                  _powerUpMode == PowerUpMode.bomb
-                      ? 'Tap a fruit to explode!'
-                      : _powerUpMode == PowerUpMode.sniper
-                          ? 'Tap a fruit to upgrade!'
-                          : 'Tap anywhere to shake!',
-                  style: GoogleFonts.fredoka(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                    fontSize: context.sp(14),
-                  ),
-                ),
+  Widget _powerUpCards(BuildContext context) {
+    const bombColor = Color(0xFFFF5722);
+    const shakerColor = Color(0xFF9C27B0);
+    const sniperColor = Color(0xFF00BCD4);
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // ── Background strip ──────────────────────────────────
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  const Color(0xFF180430).withValues(alpha: 0.3),
+                  const Color(0xFF180430).withValues(alpha: 0.85),
+                ],
               ),
             ),
-        ],
-      ),
+          ),
+        ),
+
+        // ── Three power-up cards ──────────────────────────────
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _powerUpCard(
+              context: context,
+              icon: '💣',
+              label: 'Bomb',
+              count: widget.storage.bombCount,
+              isActive: _powerUpMode == PowerUpMode.bomb,
+              activeColor: bombColor,
+              onTap: () => setState(
+                () => _powerUpMode = (_powerUpMode == PowerUpMode.bomb)
+                    ? PowerUpMode.none
+                    : PowerUpMode.bomb,
+              ),
+            ),
+            SizedBox(width: context.s(20)),
+            _powerUpCard(
+              context: context,
+              icon: '🪇',
+              label: 'Shaker',
+              count: widget.storage.shakerCount,
+              isActive: _powerUpMode == PowerUpMode.shaker,
+              activeColor: shakerColor,
+              onTap: () => setState(
+                () => _powerUpMode = (_powerUpMode == PowerUpMode.shaker)
+                    ? PowerUpMode.none
+                    : PowerUpMode.shaker,
+              ),
+            ),
+            SizedBox(width: context.s(20)),
+            _powerUpCard(
+              context: context,
+              icon: '🎯',
+              label: 'Sniper',
+              count: widget.storage.sniperCount,
+              isActive: _powerUpMode == PowerUpMode.sniper,
+              activeColor: sniperColor,
+              onTap: () => setState(
+                () => _powerUpMode = (_powerUpMode == PowerUpMode.sniper)
+                    ? PowerUpMode.none
+                    : PowerUpMode.sniper,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
-  Widget _powerUpBtn({required BuildContext context, required String icon, required String label, required int count, required bool isActive, required VoidCallback onTap}) {
-    final bool outOfStock = count <= 0;
+  Widget _powerUpCard({
+    required BuildContext context,
+    required String icon,
+    required String label,
+    required int count,
+    required bool isActive,
+    required Color activeColor,
+    required VoidCallback onTap,
+  }) {
+    final outOfStock = count <= 0;
     return GestureDetector(
       onTap: outOfStock ? null : onTap,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Container(
-            padding: EdgeInsets.all(context.s(12)),
+          // Card body
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            width: context.s(54),
+            height: context.s(54),
             decoration: BoxDecoration(
-              color: isActive ? const Color(0xFFFFD600).withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.1),
+              color: isActive
+                  ? activeColor.withValues(alpha: 0.18)
+                  : Colors.white.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(context.s(16)),
               border: Border.all(
-                color: isActive ? const Color(0xFFFFD600) : Colors.white.withValues(alpha: 0.2),
-                width: isActive ? 2 : 1,
+                color: isActive
+                    ? activeColor
+                    : Colors.white.withValues(alpha: 0.18),
+                width: isActive ? 2.0 : 1.0,
+              ),
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                        color: activeColor.withValues(alpha: 0.45),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : const [],
+            ),
+            child: Center(
+              child: Opacity(
+                opacity: outOfStock ? 0.25 : 1.0,
+                child: Text(icon, style: TextStyle(fontSize: context.sp(26))),
               ),
             ),
-            child: Opacity(
-              opacity: outOfStock ? 0.4 : 1.0,
-              child: Text(icon, style: TextStyle(fontSize: context.sp(26))),
+          ),
+
+          // Count badge (top-right corner)
+          Positioned(
+            top: -context.s(5),
+            right: -context.s(5),
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: context.s(5),
+                vertical: context.s(1),
+              ),
+              decoration: BoxDecoration(
+                color: outOfStock
+                    ? Colors.grey.shade800
+                    : (isActive ? activeColor : const Color(0xFF2D1A4A)),
+                borderRadius: BorderRadius.circular(context.s(10)),
+                border: Border.all(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                '×$count',
+                style: GoogleFonts.fredoka(
+                  color: outOfStock ? Colors.white30 : Colors.white,
+                  fontSize: context.sp(9),
+                  fontWeight: FontWeight.bold,
+                  height: 1.0,
+                ),
+              ),
             ),
           ),
-          SizedBox(height: context.s(4)),
-          Text(outOfStock ? '0' : '$label x$count', style: GoogleFonts.fredoka(
-            color: isActive ? const Color(0xFFFFD600) : Colors.white70,
-            fontSize: context.sp(12),
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-          )),
         ],
-        ),
       ),
     );
   }

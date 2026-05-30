@@ -27,94 +27,163 @@ class HudOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final nextData = FruitData.fromType(nextFruit);
     final bestData = FruitData.allFruits[bestFruitIndex.clamp(0, 9)];
+    final showCombo = combo >= 2;
 
-    return Padding(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFF1A0533).withValues(alpha: 0.85),
+            const Color(0xFF1A0533).withValues(alpha: 0.0),
+          ],
+        ),
+      ),
       padding: EdgeInsets.fromLTRB(
-          context.s(12), context.s(10), context.s(12), context.s(6)),
+          context.s(12), context.s(10), context.s(12), context.s(10)),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // ── Row 1: pause · score · next ──────────────────────────
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // ── Pause button ──────────────────────────────
+              // Pause button
               GestureDetector(
                 onTap: onPause,
                 child: Container(
-                  width: context.s(44), height: context.s(44),
+                  width: context.s(42), height: context.s(42),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFFFF7043), Color(0xFFFF9800)],
-                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(context.s(14)),
-                    boxShadow: [BoxShadow(
-                      color: const Color(0xFFFF7043).withValues(alpha: 0.5),
-                      blurRadius: 8, offset: const Offset(0, 3),
-                    )],
+                    borderRadius: BorderRadius.circular(context.s(13)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFF7043).withValues(alpha: 0.5),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      )
+                    ],
                   ),
                   child: Icon(Icons.pause_rounded,
-                      color: Colors.white, size: context.s(24)),
+                      color: Colors.white, size: context.s(22)),
                 ),
               ),
-
               SizedBox(width: context.s(8)),
 
-              // ── Score card ────────────────────────────────
+              // Score card
               Expanded(
                 child: Container(
                   padding: EdgeInsets.symmetric(
                       horizontal: context.s(14), vertical: context.s(8)),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(context.s(18)),
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(context.s(16)),
                     border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.2)),
+                        color: Colors.white.withValues(alpha: 0.14)),
                   ),
-                  child: Column(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('$score',
-                          style: GoogleFonts.fredoka(
-                            fontSize: context.sp(26), fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          )),
-                      Text('Best: $highScore',
-                          style: GoogleFonts.fredoka(
-                            fontSize: context.sp(11),
-                            color: Colors.white.withValues(alpha: 0.6),
-                          )),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '$score',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.fredoka(
+                              fontSize: context.sp(28),
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              height: 1.0,
+                            ),
+                          ),
+                          SizedBox(height: context.s(2)),
+                          Text(
+                            'Best  $highScore',
+                            style: GoogleFonts.fredoka(
+                              fontSize: context.sp(11),
+                              color: Colors.white.withValues(alpha: 0.5),
+                              height: 1.0,
+                            ),
+                          ),
+                        ],
+                      ),
+                      // Combo badge — only visible when combo ≥ 2
+                      if (showCombo)
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: context.s(8),
+                              vertical: context.s(3)),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [
+                                Color(0xFFFF9800),
+                                Color(0xFFE91E63)
+                              ],
+                            ),
+                            borderRadius:
+                                BorderRadius.circular(context.s(12)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFF9800)
+                                    .withValues(alpha: 0.5),
+                                blurRadius: 8,
+                              )
+                            ],
+                          ),
+                          child: Text(
+                            '×$combo',
+                            style: GoogleFonts.fredoka(
+                              fontSize: context.sp(13),
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              height: 1.0,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
               ),
-
               SizedBox(width: context.s(8)),
 
-              // ── Next fruit ────────────────────────────────
+              // Next fruit card
               Container(
                 padding: EdgeInsets.symmetric(
-                    horizontal: context.s(10), vertical: context.s(8)),
+                    horizontal: context.s(10), vertical: context.s(6)),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(context.s(16)),
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(context.s(14)),
                   border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2)),
+                      color: Colors.white.withValues(alpha: 0.14)),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Next',
-                        style: GoogleFonts.fredoka(
-                          fontSize: context.sp(10),
-                          color: Colors.white.withValues(alpha: 0.6),
-                        )),
+                    Text(
+                      'NEXT',
+                      style: GoogleFonts.fredoka(
+                        fontSize: context.sp(9),
+                        color: Colors.white.withValues(alpha: 0.5),
+                        letterSpacing: 0.8,
+                        height: 1.0,
+                      ),
+                    ),
+                    SizedBox(height: context.s(4)),
                     Image.asset(
                       'assets/images/fruit_${nextData.name.toLowerCase()}.png',
-                      width: context.s(36), height: context.s(36),
+                      width: context.s(36),
+                      height: context.s(36),
                       fit: BoxFit.contain,
-                      errorBuilder: (context, error, _) =>
-                          Text(nextData.emoji,
-                              style: TextStyle(fontSize: context.sp(22))),
+                      errorBuilder: (_, __, ___) => Text(nextData.emoji,
+                          style:
+                              TextStyle(fontSize: context.sp(22))),
                     ),
                   ],
                 ),
@@ -122,50 +191,75 @@ class HudOverlay extends StatelessWidget {
             ],
           ),
 
-          SizedBox(height: context.s(6)),
+          SizedBox(height: context.s(8)),
 
-          // ── Level + Best fruit row ─────────────────────────
+          // ── Row 2: level · best fruit ─────────────────────────────
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // Level badge
               Container(
                 padding: EdgeInsets.symmetric(
-                    horizontal: context.s(10), vertical: context.s(3)),
+                    horizontal: context.s(12), vertical: context.s(4)),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [Color(0xFF9C27B0), Color(0xFF3F51B5)],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
                   ),
                   borderRadius: BorderRadius.circular(context.s(20)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF9C27B0).withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    )
+                  ],
                 ),
-                child: Text('⭐ Lv.$currentLevel',
-                    style: GoogleFonts.fredoka(
-                      fontSize: context.sp(12), fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    )),
+                child: Text(
+                  '⭐  Lv.$currentLevel',
+                  style: GoogleFonts.fredoka(
+                    fontSize: context.sp(13),
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    height: 1.0,
+                  ),
+                ),
               ),
+
               // Best fruit badge
               Container(
                 padding: EdgeInsets.symmetric(
-                    horizontal: context.s(10), vertical: context.s(3)),
+                    horizontal: context.s(10), vertical: context.s(4)),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(context.s(20)),
                   border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2)),
+                      color: Colors.white.withValues(alpha: 0.18)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('🏆', style: TextStyle(fontSize: context.sp(12))),
-                    SizedBox(width: context.s(4)),
+                    Text('🏆',
+                        style: TextStyle(fontSize: context.sp(13))),
+                    SizedBox(width: context.s(5)),
                     Image.asset(
                       'assets/images/fruit_${bestData.name.toLowerCase()}.png',
-                      width: context.s(20), height: context.s(20),
+                      width: context.s(20),
+                      height: context.s(20),
                       fit: BoxFit.contain,
-                      errorBuilder: (context, error, _) =>
-                          Text(bestData.emoji,
-                              style: TextStyle(fontSize: context.sp(12))),
+                      errorBuilder: (_, __, ___) => Text(bestData.emoji,
+                          style:
+                              TextStyle(fontSize: context.sp(13))),
+                    ),
+                    SizedBox(width: context.s(4)),
+                    Text(
+                      bestData.name,
+                      style: GoogleFonts.fredoka(
+                        fontSize: context.sp(12),
+                        color: Colors.white.withValues(alpha: 0.7),
+                        height: 1.0,
+                      ),
                     ),
                   ],
                 ),

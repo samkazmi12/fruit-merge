@@ -4,6 +4,15 @@ import 'package:flutter/material.dart';
 import '../models/fruit_data.dart';
 import 'fruit_physics.dart';
 
+/// Mutable cloud state — updated each tick in GameScreen, read by GamePainter.
+class CloudState {
+  double x;
+  double y;
+  double width;
+  double speed; // px/s, positive = right
+  CloudState({required this.x, required this.y, required this.width, required this.speed});
+}
+
 class GamePainter extends CustomPainter {
   final List<FruitParticle> fruits;
   final List<MergeParticle> particles;
@@ -14,6 +23,14 @@ class GamePainter extends CustomPainter {
   final double gameOverLineY;
   final double dangerLevel;
   final Map<FruitType, ui.Image> fruitImages;
+  // ── Drop zone visuals ─────────────────────────────────────────────
+  final List<CloudState> clouds;
+  final ui.Image? cloudImage;
+  final ui.Image? branchImage;
+  final double dropX;
+  final double dropY;
+  final double dropFruitRadius;
+  final bool showDropper;
 
   GamePainter({
     required this.fruits,
@@ -25,12 +42,51 @@ class GamePainter extends CustomPainter {
     required this.gameOverLineY,
     this.dangerLevel = 0,
     this.fruitImages = const {},
+    this.clouds = const [],
+    this.cloudImage,
+    this.branchImage,
+    this.dropX = 0,
+    this.dropY = 0,
+    this.dropFruitRadius = 20,
+    this.showDropper = false,
   });
+
+  // ── Pre-allocated Paints (created once, reused every frame) ──────
+  static final Paint _bgPaint = Paint()
+    ..color = const Color(0xE0E8DFD5);
+  static final Paint _innerShadowPaint = Paint();
+  static final Paint _dividerPaint = Paint()
+    ..color = const Color(0x2EFFFFFF)
+    ..strokeWidth = 2.0;
+  static final Paint _glowPaint = Paint()
+    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14)
+    ..strokeWidth = 18;
+  static final Paint _dangerLinePaint = Paint()
+    ..color = const Color(0xBBE53935)
+    ..strokeWidth = 1.8;
+  static final Paint _wallPaint = Paint()
+    ..color = const Color(0xFFBBAAA0)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 3.5
+    ..strokeCap = StrokeCap.round;
+  static final Paint _shinePaint = Paint()
+    ..color = const Color(0x47FFFFFF)
+    ..strokeWidth = 3.5;
+  static final Paint _particlePaint  = Paint();
+  static final Paint _cloudPaint     = Paint()..filterQuality = FilterQuality.low;
+  static final Paint _spritePaint    = Paint()..filterQuality = FilterQuality.medium;
+  static final Paint _branchPaint    = Paint()..filterQuality = FilterQuality.medium;
+  static final Paint _mergeGlowPaint = Paint();
+  // TextPainter cache for emoji fallback: keyed by "emoji:fontSize" avoids
+  // per-frame TextPainter + layout() allocations.
+  static final Map<String, TextPainter> _emojiCache = {};
 
   @override
   void paint(Canvas canvas, Size size) {
     _drawContainer(canvas);
+    _drawClouds(canvas);
     _drawParticles(canvas);
+    if (showDropper && branchImage != null) _drawBranch(canvas);
     _drawFruits(canvas);
   }
 
@@ -39,110 +95,127 @@ class GamePainter extends CustomPainter {
     final w = boxRight - boxLeft;
 
     // Background
-    final bgPaint = Paint()..color = const Color(0xFFE8DFD5).withValues(alpha: 0.88);
     canvas.drawRRect(
       RRect.fromLTRBAndCorners(boxLeft, boxTop, boxRight, boxBottom,
           bottomLeft: const Radius.circular(14),
           bottomRight: const Radius.circular(14)),
-      bgPaint,
+      _bgPaint,
     );
 
-    // Inner shadow at top
-    canvas.drawRect(
-      Rect.fromLTWH(boxLeft, boxTop, w, 28),
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.black.withValues(alpha: 0.08), Colors.transparent],
-        ).createShader(Rect.fromLTWH(boxLeft, boxTop, w, 28)),
-    );
+    // Inner shadow at top (const gradient avoids allocation; only createShader allocates)
+    final shadowRect = Rect.fromLTWH(boxLeft, boxTop, w, 28);
+    _innerShadowPaint.shader = const LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [Color(0x14000000), Colors.transparent],
+    ).createShader(shadowRect);
+    canvas.drawRect(shadowRect, _innerShadowPaint);
 
     // Centre divider line
     canvas.drawLine(
       Offset(boxLeft + w / 2, boxTop),
       Offset(boxLeft + w / 2, boxBottom),
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.18)
-        ..strokeWidth = 2.0,
+      _dividerPaint,
     );
 
-    // ── Danger glow on walls when box is filling up ──────────────
+    // ── Danger glow on walls ──────────────────────────────────────
     if (dangerLevel > 0) {
-      final glowAlpha = (dangerLevel.clamp(0.0, 1.0) * 0.55);
-      final glowColor = Color.lerp(
-        const Color(0xFFFFB74D), // orange warning
-        const Color(0xFFE53935), // red danger
+      _glowPaint.color = Color.lerp(
+        const Color(0xFFFFB74D),
+        const Color(0xFFE53935),
         dangerLevel,
-      )!.withValues(alpha: glowAlpha);
-
-      final glowPaint = Paint()
-        ..color = glowColor
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
-
-      // Left wall glow
-      canvas.drawLine(
-        Offset(boxLeft, boxTop), Offset(boxLeft, boxBottom), glowPaint..strokeWidth = 18);
-      // Right wall glow
-      canvas.drawLine(
-        Offset(boxRight, boxTop), Offset(boxRight, boxBottom), glowPaint);
+      )!.withValues(alpha: dangerLevel.clamp(0.0, 1.0) * 0.55);
+      canvas.drawLine(Offset(boxLeft, boxTop), Offset(boxLeft, boxBottom), _glowPaint);
+      canvas.drawLine(Offset(boxRight, boxTop), Offset(boxRight, boxBottom), _glowPaint);
     }
 
-    // ── Danger / game-over dashed line ─────────────────────────
-    final dangerPaint = Paint()
-      ..color = const Color(0xBBE53935)
-      ..strokeWidth = 1.8;
+    // ── Danger / game-over dashed line ────────────────────────────
     const dash = 12.0, gap = 7.0;
     var x = boxLeft + 4.0;
     while (x < boxRight - 4.0) {
       final xEnd = (x + dash).clamp(boxLeft, boxRight - 4.0);
-      canvas.drawLine(Offset(x, gameOverLineY), Offset(xEnd, gameOverLineY), dangerPaint);
+      canvas.drawLine(Offset(x, gameOverLineY), Offset(xEnd, gameOverLineY), _dangerLinePaint);
       x += dash + gap;
     }
 
-    // ── Walls (drawn on top of glow) ───────────────────────────
-    final wallPaint = Paint()
-      ..color = const Color(0xFFBBAAA0)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawLine(Offset(boxLeft, boxTop - 10), Offset(boxLeft, boxBottom), wallPaint);
-    canvas.drawLine(Offset(boxRight, boxTop - 10), Offset(boxRight, boxBottom), wallPaint);
-    canvas.drawLine(Offset(boxLeft, boxBottom), Offset(boxRight, boxBottom), wallPaint);
+    // ── Walls ─────────────────────────────────────────────────────
+    canvas.drawLine(Offset(boxLeft, boxTop - 10), Offset(boxLeft, boxBottom), _wallPaint);
+    canvas.drawLine(Offset(boxRight, boxTop - 10), Offset(boxRight, boxBottom), _wallPaint);
+    canvas.drawLine(Offset(boxLeft, boxBottom), Offset(boxRight, boxBottom), _wallPaint);
 
     // Glass shine strip
     canvas.drawLine(
       Offset(boxLeft + 4, boxTop),
       Offset(boxLeft + 4, boxBottom - 12),
-      Paint()..color = Colors.white.withValues(alpha: 0.28)..strokeWidth = 3.5,
+      _shinePaint,
+    );
+  }
+
+  // ── Clouds (drop zone, above jar) ───────────────────────────────
+  void _drawClouds(Canvas canvas) {
+    final img = cloudImage;
+    if (img == null || clouds.isEmpty) return;
+    // Clip clouds to the drop zone (above jar top)
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(0, 0, boxRight + 20, boxTop - 4));
+    final src = Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
+    for (final c in clouds) {
+      final h = c.width * img.height / img.width;
+      _cloudPaint.color = Colors.white.withValues(alpha: 0.62);
+      canvas.drawImageRect(
+        img,
+        src,
+        Rect.fromCenter(center: Offset(c.x, c.y), width: c.width, height: h),
+        _cloudPaint,
+      );
+    }
+    canvas.restore();
+  }
+
+  // ── Branch dropper ────────────────────────────────────────────────
+  void _drawBranch(Canvas canvas) {
+    final img = branchImage!;
+    const branchW = 90.0;
+    final branchH = branchW * img.height / img.width;
+    // Hang point within the rendered branch (right-side underside of branch)
+    // Approx 82% across, 68% down = where the fruit tip attaches
+    final hangX = branchW * 0.82;
+    final hangY = branchH * 0.68;
+    final left = dropX - hangX;
+    final top  = dropY - dropFruitRadius - 6 - hangY;
+    canvas.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromLTWH(left, top, branchW, branchH),
+      _branchPaint,
     );
   }
 
   // ── Merge particles ──────────────────────────────────────────────
   void _drawParticles(Canvas canvas) {
+    if (particles.isEmpty) return;
     for (final p in particles) {
       if (!p.alive) continue;
       final alpha = (p.life / p.maxLife).clamp(0.0, 1.0);
-      canvas.drawCircle(
-        Offset(p.x, p.y),
-        p.radius,
-        Paint()..color = p.color.withValues(alpha: alpha),
-      );
+      _particlePaint.color = p.color.withValues(alpha: alpha);
+      canvas.drawCircle(Offset(p.x, p.y), p.radius, _particlePaint);
     }
   }
 
   // ── Fruits ───────────────────────────────────────────────────────
   void _drawFruits(Canvas canvas) {
-    final regular = fruits.where((f) => f.alive && !f.isPreview);
-    final preview = fruits.where((f) => f.alive && f.isPreview);
-
-    for (final f in regular) {
-      _drawFruit(canvas, f);
+    // Single pass: draw regular fruits first, defer preview to draw last (on top)
+    FruitParticle? previewFruit;
+    for (final f in fruits) {
+      if (f.isPreview) {
+        previewFruit = f;
+      } else {
+        _drawFruit(canvas, f);
+      }
     }
-    for (final f in preview) {
-      _drawFruit(canvas, f);
-      _drawDropGuide(canvas, f);
+    if (previewFruit != null) {
+      _drawFruit(canvas, previewFruit);
+      _drawDropGuide(canvas, previewFruit);
     }
   }
 
@@ -154,13 +227,10 @@ class GamePainter extends CustomPainter {
 
     // Merge glow
     if (f.mergeGlow > 0) {
-      canvas.drawCircle(
-        center,
-        r * 1.25,
-        Paint()
-          ..color = Colors.white.withValues(alpha: f.mergeGlow * 0.5)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.4),
-      );
+      _mergeGlowPaint
+        ..color = Colors.white.withValues(alpha: f.mergeGlow * 0.5)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.4);
+      canvas.drawCircle(center, r * 1.25, _mergeGlowPaint);
     }
 
     // Preview drop indicator — subtle dashed ring only
@@ -252,19 +322,17 @@ class GamePainter extends CustomPainter {
       img,
       Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
       Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 2),
-      Paint()..filterQuality = FilterQuality.medium,
+      _spritePaint,
     );
     canvas.restore();
   }
 
   void _drawEmoji(Canvas canvas, Offset center, double r, String emoji) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: emoji,
-        style: TextStyle(fontSize: r * 1.25, height: 1.0),
-      ),
+    final key = '$emoji:${(r * 1.25).round()}';
+    final tp = _emojiCache.putIfAbsent(key, () => TextPainter(
+      text: TextSpan(text: emoji, style: TextStyle(fontSize: r * 1.25, height: 1.0)),
       textDirection: TextDirection.ltr,
-    )..layout();
+    )..layout());
     tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
   }
 
