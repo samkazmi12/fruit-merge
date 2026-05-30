@@ -59,16 +59,23 @@ class FruitMergeApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      initialRoute: '/',
+      initialRoute: '/loading',
       onGenerateRoute: (settings) {
         switch (settings.name) {
+          case '/loading':
+            return MaterialPageRoute(
+              builder: (_) => const LoadingScreen(nextRoute: '/'),
+            );
           case '/':
             return MaterialPageRoute(
               builder: (_) => HomeScreen(storage: storage),
             );
           case '/game':
             return MaterialPageRoute(
-              builder: (_) => const LoadingScreen(),
+              builder: (_) => GameScreen(
+                storage: storage,
+                audio: audio,
+              ),
             );
           case '/gameplay':
             return MaterialPageRoute(
