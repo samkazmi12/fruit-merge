@@ -195,7 +195,7 @@ class _GameScreenState extends State<GameScreen>
     // Cap jar height so it doesn't dominate the screen on tall/large devices
     final sf = (size.width / 390).clamp(0.75, 1.35);
     final hudH = 130.0 * sf;
-    // _hudH = hudH;
+
     _cardsH = 64.0 * sf;
     _adH = 60.0;
     const sidePad = 8.0;
